@@ -39,7 +39,7 @@ function init_config() {
 
     source "$COMMONS_FILE" #SC1090
     source "$COMMONS_CONF_FILE"
-    source "$PURE-ARCH_CONF_FILE"
+    source "$PURE_ARCH_CONF_FILE"
 }
 
 function sanitize_variables() {
@@ -233,7 +233,7 @@ function init() {
     print_step "init()"
 
     init_log_trace "$LOG_TRACE"
-    init_log_file "$LOG_FILE" "$PURE-ARCH_LOG_FILE"
+    init_log_file "$LOG_FILE" "$PURE_ARCH_LOG_FILE"
     loadkeys "$KEYS"
 }
 
@@ -1776,9 +1776,9 @@ function copy_logs() {
     local ESCAPED_ROOT_PASSWORD=${ROOT_PASSWORD//[.[\*^$()+?{|]/[\\&]}
     local ESCAPED_USER_PASSWORD=${USER_PASSWORD//[.[\*^$()+?{|]/[\\&]}
 
-    if [ -f "$PURE-ARCH_CONF_FILE" ]; then
-        local SOURCE_FILE="$PURE-ARCH_CONF_FILE"
-        local FILE="${MNT_DIR}/var/log/pure-arch/$PURE-ARCH_CONF_FILE"
+    if [ -f "$PURE_ARCH_CONF_FILE" ]; then
+        local SOURCE_FILE="$PURE_ARCH_CONF_FILE"
+        local FILE="${MNT_DIR}/var/log/pure-arch/$PURE_ARCH_CONF_FILE"
 
         mkdir -p "${MNT_DIR}"/var/log/pure-arch
         cp "$SOURCE_FILE" "$FILE"
@@ -1794,9 +1794,9 @@ function copy_logs() {
             sed -i "s/${ESCAPED_USER_PASSWORD}/******/g" "$FILE"
         fi
     fi
-    if [ -f "$PURE-ARCH_LOG_FILE" ]; then
-        local SOURCE_FILE="$PURE-ARCH_LOG_FILE"
-        local FILE="${MNT_DIR}/var/log/pure-arch/$PURE-ARCH_LOG_FILE"
+    if [ -f "$PURE_ARCH_LOG_FILE" ]; then
+        local SOURCE_FILE="$PURE_ARCH_LOG_FILE"
+        local FILE="${MNT_DIR}/var/log/pure-arch/$PURE_ARCH_LOG_FILE"
 
         mkdir -p "${MNT_DIR}"/var/log/pure-arch
         cp "$SOURCE_FILE" "$FILE"
@@ -1812,9 +1812,9 @@ function copy_logs() {
             sed -i "s/${ESCAPED_USER_PASSWORD}/******/g" "$FILE"
         fi
     fi
-    if [ -f "$PURE-ARCH_ASCIINEMA_FILE" ]; then
-        local SOURCE_FILE="$PURE-ARCH_ASCIINEMA_FILE"
-        local FILE="${MNT_DIR}/var/log/pure-arch/$PURE-ARCH_ASCIINEMA_FILE"
+    if [ -f "$PURE_ARCH_ASCIINEMA_FILE" ]; then
+        local SOURCE_FILE="$PURE_ARCH_ASCIINEMA_FILE"
+        local FILE="${MNT_DIR}/var/log/pure-arch/$PURE_ARCH_ASCIINEMA_FILE"
 
         mkdir -p "${MNT_DIR}"/var/log/pure-arch
         cp "$SOURCE_FILE" "$FILE"

@@ -31,9 +31,9 @@ set -eu
 # Common functions and definitions.
 
 # common static variables
-PURE-ARCH_CONF_FILE="pure-arch.conf"
-PURE-ARCH_LOG_FILE="pure-arch.log"
-PURE-ARCH_ASCIINEMA_FILE="pure-arch.asciinema"
+PURE_ARCH_CONF_FILE="pure-arch.conf"
+PURE_ARCH_LOG_FILE="pure-arch.log"
+PURE_ARCH_ASCIINEMA_FILE="pure-arch.asciinema"
 RECOVERY_CONF_FILE="pure-arch-recovery.conf"
 RECOVERY_LOG_FILE="pure-arch-recovery.log"
 RECOVERY_ASCIINEMA_FILE="pure-arch-recovery.asciinema"
@@ -142,7 +142,7 @@ function facts_commons() {
         BIOS_TYPE="bios"
     fi
 
-    if [ -f "$PURE-ARCH_ASCIINEMA_FILE" ] || [ -f "$RECOVERY_ASCIINEMA_FILE" ]; then
+    if [ -f "$PURE_ARCH_ASCIINEMA_FILE" ] || [ -f "$RECOVERY_ASCIINEMA_FILE" ]; then
         ASCIINEMA="true"
     else
         ASCIINEMA="false"
