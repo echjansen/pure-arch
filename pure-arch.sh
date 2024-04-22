@@ -192,7 +192,7 @@ function check_variables() {
     check_variables_list "BOOTLOADER" "$BOOTLOADER" "auto grub refind systemd efistub" "true" "true"
     check_variables_boolean "SECURE_BOOT" "$SECURE_BOOT"
     check_variables_list "CUSTOM_SHELL" "$CUSTOM_SHELL" "bash zsh dash fish" "true" "true"
-    check_variables_list "DESKTOP_ENVIRONMENT" "$DESKTOP_ENVIRONMENT" "gnome kde xfce mate cinnamon lxde i3-wm i3-gaps deepin budgie bspwm awesome qtile openbox leftwm dusk" "false" "true"
+    check_variables_list "DESKTOP_ENVIRONMENT" "$DESKTOP_ENVIRONMENT" "gnome kde xfce mate cinnamon lxde i3-wm i3-gaps deepin budgie hyprland bspwm awesome qtile openbox leftwm dusk" "false" "true"
     check_variables_list "DISPLAY_MANAGER" "$DISPLAY_MANAGER" "auto gdm sddm lightdm lxdm" "true" "true"
     check_variables_boolean "PACKAGES_MULTILIB" "$PACKAGES_MULTILIB"
     check_variables_boolean "PACKAGES_INSTALL" "$PACKAGES_INSTALL"
@@ -202,7 +202,7 @@ function check_variables() {
 }
 
 function warning() {
-    echo -e "${BLUE}Welcome to Arch Linux Install Script${NC}"
+    echo -e "${BLUE}Welcome to Pure Arch installation:${NC}"
     echo ""
     echo -e "${RED}Warning"'!'"${NC}"
     echo -e "${RED}This script can delete all partitions of the persistent${NC}"
@@ -1507,11 +1507,11 @@ function desktop_environment() {
     print_step "desktop_environment()"
 
     case "$DESKTOP_ENVIRONMENT" in
-        "gnome" )
-            desktop_environment_gnome
-            ;;
         "kde" )
             desktop_environment_kde
+            ;;
+        "gnome" )
+            desktop_environment_gnome
             ;;
         "xfce" )
             desktop_environment_xfce
@@ -1536,6 +1536,9 @@ function desktop_environment() {
             ;;
         "budgie" )
             desktop_environment_budgie
+            ;;
+        "hyprland" )
+            desktop_environment_hyprland
             ;;
         "bspwm" )
             desktop_environment_bspwm
@@ -1598,6 +1601,10 @@ function desktop_environment_deepin() {
 
 function desktop_environment_budgie() {
     pacman_install "budgie-desktop budgie-desktop-view budgie-screensaver gnome-control-center network-manager-applet gnome"
+}
+
+function desktop_environment_hyprland() {
+    pacman_install "hyprland dunst alacritty dolphin wofi xdg-desktop-portal-hyprland qt5-wayland qt6-wayland"
 }
 
 function desktop_environment_bspwm() {

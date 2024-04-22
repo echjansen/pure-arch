@@ -3,6 +3,16 @@
 This document describes the process of installing = P U R E - A R C H =.
 It uses the Arch provided 'archinstaller' utility, that comes with the ISO, but unlike most standard installations it focusses on creating a repeatable system.
 
+* Introduction
+The current arch linux ISO comes with an installation script called 'archinstall'. It is good option for those who quickly want to install and archlinux system, and are satisfied with general, average options.
+If you require modifications to such default, then the 'archinstall' script is difficult to modify. The script is written in Python and requires indepth knowledge of the language as well as the framework that it provides.
+
+Pure-Arch is different in the way that it provides:
+- customisable Archlinux installation
+- commands are in bash
+- easy to modify
+- secure arch
+
 * Linux commands to check system
 
 #+begin_src shell
@@ -41,7 +51,7 @@ Note that at the moment installation fails on 'grub'. An automatic BTRFS works, 
          + Mount: /var/lib/libvirt/images
          + Compressed
          + Nodatacow
-    
+
 * Archinstall Options
 - Desktop:
    + kde
@@ -133,14 +143,14 @@ To rectify this:
 #+begin_src shell
   sudo umount /.snapshots/                  # unmount snapshots
   sudo rm -r /.snapshots/                   # remove the folder
-  sudo snapper -c root create-config /      # create the snapper config 
+  sudo snapper -c root create-config /      # create the snapper config
   sudo btrfs subvolume list /               # check that the additional subvolume was created
   sudo btrfs subvolume delete /.snapshots   # delete the extra snapshot subvolume
   sudo mkdir /.snapshots                    # recreate the mount point for snapshots
   sudo mount -av                            # mount all again
   sudo snapper ls                           # shows existing snapshots
   sudo grub-mkconfig -o /boot/grub/grub.cfg # create grub snaphots
-  sudo systemctl enable --now grub-btrfsd   # enable to notify deamon 
+  sudo systemctl enable --now grub-btrfsd   # enable to notify deamon
   sudo systemctl status grub-btrfsd         # check if the deamon is runnning
   # install a package to trigger the deamon
   sudo snapper ls                           # shows existing snapshots
@@ -151,7 +161,7 @@ By default arch does not enable discards, so trims on the SSD will fail.
 The following enables discards:
 
 #+begin_src shell
-  sudo cryptsetup status cryptlvm                    # check status of the crypt volume 
+  sudo cryptsetup status cryptlvm                    # check status of the crypt volume
   suo fstrim -v /                                    # check if trimming works --> no
   sudo cryptesetup refresh --allow-discards cryptlvm # enable discards
   sudo cryptsetup status cryptlvm                    # check status of the crypt volume
@@ -160,4 +170,3 @@ The following enables discards:
   sudo systemctl status fstrim.service               # check if all partitions are trimming
   sudo systenctl status frstrim.timer                # takes care if triggering the trim
 #+end_src
-
