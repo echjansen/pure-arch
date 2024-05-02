@@ -1839,6 +1839,20 @@ function copy_logs() {
     fi
 }
 
+function snapper() {
+    umount /.snapshots/
+    rm -r /.snapshots/
+    snapper -c root create-config /
+    btrfs subvol delete /.snapshots
+    mkdir /.snapshots
+    mount -av
+    btrfs subvol set-def 256 /
+    chown -R :wheel /.snapshots
+    snapper -c root create -d "*** Pure-Arch Installed ***"
+    grub-mkconfig -o /boot/grub/grub.cfg
+    systemctl enable --now grub-btrfsd
+}
+
 function main() {
     local START_TIMESTAMP=$(date -u +"%F %T")
     init_config
