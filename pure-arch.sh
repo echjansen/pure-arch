@@ -1840,27 +1840,19 @@ function copy_logs() {
 }
 
 function snapper_install() {
-    #umount /.snapshots/
-    umount "${MNT_DIR}"/.snapshots/
-    #rm -r /.snapshots/
-    rm -r "${MNT_DIR}"/.snapshots/
-    #snapper -c root create-config /
-    snapper -c root create-config "${MNT_DIR}"
-    #btrfs subvol delete /.snapshots
-    btrfs subvol delete "${MNT_DIR}"/.snapshots
-    #mkdir /.snapshots
-    mkdir "${MNT_DIR}"/.snapshots
-    #mount -av
-    arch-chroot "${MNT_DIR}" mount -av
-    #btrfs subvol set-def 256 /
-    btrfs subvol set-def 256 "${MNT_DIR}" 
-    #chown -R :wheel /.snapshots
-    chown -R :wheel "${MNT_DIR}"/.snapshots
-    #snapper -c root create -d "*** Pure-Arch Installed ***"
-    arch-chroot snapper -c root create -s "**** Pure-Arch Installed ****"
-    #grub-mkconfig -o /boot/grub/grub.cfg
-    arch-chroot grub-mkconfig -o /boot/grub/grub.cfg
-    #systemctl enable --now grub-btrfsd
+    arch-chroot /mnt /bin/bash -e <<EOF
+        umount /.snapshots/
+        rm -r /.snapshots/
+        snapper -c root create-config /
+        btrfs subvol delete /.snapshots
+        mkdir /.snapshots
+        mount -av
+        btrfs subvol set-def 256 /
+        chown -R :wheel /.snapshots
+        snapper -c root create -d "*** Pure-Arch Installed ***"
+        grub-mkconfig -o /boot/grub/grub.cfg
+        systemctl enable --now grub-btrfsd
+    EOF
 }
 
 function main() {
