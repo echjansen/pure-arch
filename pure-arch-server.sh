@@ -2,7 +2,7 @@
 
 # Cleaning the TTY.
 clear
-
+setfont ter-v22b
 
 # Selecting the kernel flavor to install.
 kernel_selector () {
