@@ -451,7 +451,7 @@ systemctl enable chronyd --root=/mnt &>/dev/null
 echo "Enabling Snapper and automatic snapshots entries."
 systemctl enable snapper-timeline.timer --root=/mnt &>/dev/null
 systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
-# systemctl enable grub-btrfs.path --root=/mnt &>/dev/null
+systemctl enable grub-btrfsd --root=/mnt &>/dev/null
 
 # Setting umask to 077.
 sed -i 's/022/077/g' /mnt/etc/profile
