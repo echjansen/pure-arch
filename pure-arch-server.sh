@@ -401,8 +401,8 @@ echo "Enabling snapper timeline"
 systemctl enable snapper-timeline.timer --root=/mnt &>/dev/null
 echo "Enabling snapper cleanup"
 systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
-echo "Enabling grub snapper menu"
-systemctl enable grub-btrfs.path --root=/mnt &>/dev/null
+# echo "Enabling grub snapper menu"
+# systemctl enable grub-btrfs.path --root=/mnt &>/dev/null
 
 # Setting umask to 077.
 sed -i 's/022/077/g' /mnt/etc/profile
