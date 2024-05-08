@@ -4,15 +4,40 @@
 clear
 setfont ter-v22b
 
+# Cosmetics (colours for text).
+BOLD='\e[1m'
+BRED='\e[91m'
+BBLUE='\e[34m'  
+BGREEN='\e[92m'
+BYELLOW='\e[93m'
+RESET='\e[0m'
+
+# Pretty print (function).
+info_print () {
+    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ] $1${RESET}"
+}
+
+# Pretty print for input (function).
+input_print () {
+    echo -ne "${BOLD}${BYELLOW}[ ${BGREEN}•${BYELLOW} ] $1${RESET}"
+}
+
+# Alert user of bad input (function).
+error_print () {
+    echo -e "${BOLD}${BRED}[ ${BBLUE}•${BRED} ] $1${RESET}"
+}
+
 # Selecting the kernel flavor to install.
 kernel_selector () {
-    echo "List of kernels:"
-    echo "1) Stable — Vanilla Linux kernel and modules, with a few patches applied."
-    echo "2) Hardened — A security-focused Linux kernel."
-    echo "3) Longterm — Long-term support (LTS) Linux kernel and modules."
-    echo "4) Zen Kernel — Optimized for desktop usage."
-    read -r -p "Insert the number of the corresponding kernel: " choice
-    echo "$choice will be installed"
+    info_print "List of kernels:"
+    info_print "List of kernels:"
+    info_print "1) Stable: Vanilla Linux kernel with a few specific Arch Linux patches applied"
+    info_print "2) Hardened: A security-focused Linux kernel"
+    info_print "3) Longterm: Long-term support (LTS) Linux kernel"
+    info_print "4) Zen Kernel: A Linux kernel optimized for desktop usage"
+    input_print "Please select the number of the corresponding kernel (e.g. 1): " 
+    read -r choice    
+    info_print "$choice will be installed"
     case $choice in
         1 ) kernel=linux
             ;;
@@ -64,22 +89,28 @@ read -r -p "Please insert the locale you use in this format (xx_XX): " locale
 read -r -p "Please insert the keyboard layout you use: " kblayout
 
 ## installation ##
+info_print "Installing P U R E - A R C H".
 
 # Speed-up the pacman download
+info_print "Speed up pacman download"
 sed -i 's/#Color/Color/' /etc/pacman.conf
 sed -i 's/#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
 
 # Updating the live environment usually causes more problems than its worth, and quite often can't be done without remounting cowspace with more capacity, especially at the end of any given month.
-pacman -Sy
+info_print "Updating pacman"
+pacman -Sy &>/dev/null
 
 # Installing curl
-pacman -S --noconfirm curl
+info_print "Installing curl"
+pacman -S --noconfirm curl &>/dev/null
 
 # formatting the disk
+info_print "Formatting disk"
 wipefs -af "$DISK" &>/dev/null
 sgdisk -Zo "$DISK" &>/dev/null
 
 # Checking the microcode to install.
+info_print "Checking microcode"
 CPU=$(grep vendor_id /proc/cpuinfo)
 if [[ $CPU == *"AuthenticAMD"* ]]; then
     microcode=amd-ucode
@@ -88,7 +119,7 @@ else
 fi
 
 # Creating a new partition scheme.
-echo "Creating new partition scheme on $DISK."
+info_print "Creating new partition scheme on $DISK."
 parted -s "$DISK" \
     mklabel gpt \
     mkpart ESP fat32 1MiB 128MiB \
@@ -100,27 +131,28 @@ ESP="/dev/$(lsblk $DISK -o NAME,PARTLABEL | grep ESP| cut -d " " -f1 | cut -c7-)
 cryptroot="/dev/$(lsblk $DISK -o NAME,PARTLABEL | grep cryptroot | cut -d " " -f1 | cut -c7-)"
 
 # Informing the Kernel of the changes.
-echo "Informing the Kernel about the disk changes."
+info_print "Informing the Kernel about the disk changes."
 partprobe "$DISK"
 
 # Formatting the ESP as FAT32.
-echo "Formatting the EFI Partition as FAT32."
+info_print "Formatting the EFI Partition as FAT32."
 mkfs.fat -F 32 -s 2 $ESP &>/dev/null
 
 # Creating a LUKS Container for the root partition.
-echo "Creating LUKS Container for the root partition."
+info_print "Creating LUKS Container for the root partition."
 cryptsetup luksFormat --type luks1 $cryptroot
-echo "Opening the newly created LUKS Container."
+
+info_print "Opening the newly created LUKS Container."
 cryptsetup open $cryptroot cryptroot
 BTRFS="/dev/mapper/cryptroot"
 
 # Formatting the LUKS Container as BTRFS.
-echo "Formatting the LUKS container as BTRFS."
+info_print "Formatting the LUKS container as BTRFS."
 mkfs.btrfs $BTRFS &>/dev/null
 mount -o clear_cache,nospace_cache $BTRFS /mnt
 
 # Creating BTRFS subvolumes.
-echo "Creating BTRFS subvolumes."
+info_print "Creating BTRFS subvolumes."
 btrfs su cr /mnt/@ &>/dev/null
 btrfs su cr /mnt/@/.snapshots &>/dev/null
 mkdir -p /mnt/@/.snapshots/1 &>/dev/null
@@ -156,6 +188,7 @@ chattr +C /mnt/@/var_lib_AccountsService
 chattr +C /mnt/@/cryptkey
 
 #Set the default BTRFS Subvol to Snapshot 1 before pacstrapping
+info_print "Set the default BTRFS subvol to Snapshot 1"
 btrfs subvolume set-default "$(btrfs subvolume list /mnt | grep "@/.snapshots/1/snapshot" | grep -oP '(?<=ID )[0-9]+')" /mnt
 
 cat << EOF >> /mnt/@/.snapshots/1/info.xml
@@ -173,7 +206,7 @@ chmod 600 /mnt/@/.snapshots/1/info.xml
 
 # Mounting the newly created subvolumes.
 umount /mnt
-echo "Mounting the newly created subvolumes."
+info_print "Mounting the newly created subvolumes."
 mount -o ssd,noatime,space_cache,compress=zstd:15 $BTRFS /mnt
 mkdir -p /mnt/{boot,root,home,.snapshots,srv,tmp,/var/log,/var/crash,/var/cache,/var/tmp,/var/spool,/var/lib/libvirt/images,/var/lib/machines,/var/lib/gdm,/var/lib/AccountsService,/cryptkey}
 mount -o ssd,noatime,space_cache=v2,autodefrag,compress=zstd:15,discard=async,nodev,nosuid,noexec,subvol=@/boot $BTRFS /mnt/boot
@@ -232,11 +265,11 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "man" for manual pages
 # "sudo" to run commands as other users
 # "zram-generator" configure zram swap devices
-echo "Installing the base system, please wait ..."
+info_print "Installing the base system, please wait ..."
 pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man
 
 # Generating /etc/fstab.
-echo "Generating a new fstab."
+info_print "Generating a new fstab."
 genfstab -U /mnt >> /mnt/etc/fstab
 sed -i 's#,subvolid=258,subvol=/@/.snapshots/1/snapshot,subvol=@/.snapshots/1/snapshot##g' /mnt/etc/fstab
 
@@ -245,7 +278,7 @@ read -r -p "Please enter the hostname: " hostname
 echo "$hostname" > /mnt/etc/hostname
 
 # Setting hosts file.
-echo "Setting hosts file."
+info_print "Setting hosts file."
 cat > /mnt/etc/hosts <<EOF
 127.0.0.1   localhost
 ::1         localhost
@@ -265,7 +298,7 @@ read -r -p "Please insert the keyboard layout you use: " kblayout
 echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
 
 # Configuring /etc/mkinitcpio.conf
-echo "Configuring /etc/mkinitcpio for ZSTD compression and LUKS hook."
+info_print "Configuring /etc/mkinitcpio for ZSTD compression and LUKS hook."
 sed -i 's,#COMPRESSION="zstd",COMPRESSION="zstd",g' /mnt/etc/mkinitcpio.conf
 sed -i 's,HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block filesystems fsck),HOOKS=(base udev autodetect microcode modconf kms keyboard keymap consolefont block encrypt filesystems fsck),g' /mnt/etc/mkinitcpio.conf
 
@@ -277,6 +310,7 @@ echo -e "# Booting with BTRFS subvolume\nGRUB_BTRFS_OVERRIDE_BOOT_PARTITION_DETE
 sed -i 's#rootflags=subvol=${rootsubvol}##g' /mnt/etc/grub.d/10_linux
 sed -i 's#rootflags=subvol=${rootsubvol}##g' /mnt/etc/grub.d/20_linux_xen
 
+info_print "Securing Linux"
 # Enabling CPU Mitigations
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_cpu_mitigations.cfg -o /mnt/etc/grub.d/40_cpu_mitigations.cfg
 
@@ -341,6 +375,7 @@ max-zram-size = 8192
 EOF
 
 # Configuring the system.
+info_print "Configuring the system - chroot"
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
@@ -395,6 +430,7 @@ sed -i 's/# \(%wheel ALL=(ALL\(:ALL\|\)) ALL\)/\1/g' /mnt/etc/sudoers
 # Change audit logging group
 echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 
+info_print "Enabling services"
 # Enabling audit service.
 systemctl enable auditd --root=/mnt &>/dev/null
 
@@ -430,12 +466,9 @@ systemctl disable systemd-timesyncd --root=/mnt &>/dev/null
 systemctl enable chronyd --root=/mnt &>/dev/null
 
 # Enabling Snapper automatic snapshots.
-echo "Enabling Snapper and automatic snapshots entries."
-echo "Enabling snapper timeline"
+info_print "Enabling Snapper and automatic snapshots entries."
 systemctl enable snapper-timeline.timer --root=/mnt &>/dev/null
-echo "Enabling snapper cleanup"
 systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
-echo "Enabling grub snapper menu"
 systemctl enable grub-btrfsd --root=/mnt &>/dev/null
 
 # Setting umask to 077.
@@ -444,5 +477,5 @@ echo "" >> /mnt/etc/bash.bashrc
 echo "umask 077" >> /mnt/etc/bash.bashrc
 
 # Finishing up
-echo "Done, you may now wish to reboot (further changes can be done by chrooting into /mnt)."
+info_print "Done, you may now wish to reboot (further changes can be done by chrooting into /mnt)."
 exit
