@@ -55,7 +55,7 @@ kernel_selector () {
 ## user input ##
 
 # Selecting the target for the installation.
-PS3="${BOLD}${BYELLOW}Select the disk where Arch Linux is going to be installed: ${RESET}"
+PS3="Select the disk where Arch Linux is going to be installed: "
 select ENTRY in $(lsblk -dpnoNAME|grep -P "/dev/sd|nvme|vd");
 do
     DISK=$ENTRY
@@ -66,7 +66,6 @@ done
 # Confirming the disk selection.
 input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?" 
 read -r response    
-# read -r -p "This will delete the current partition table on $DISK. Do you agree [y/N]? " response
 response=${response,,}
 if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
     error_print "No selected. Quitting the installation."
@@ -79,7 +78,6 @@ kernel_selector
 # Setting username.
 input_print "Please enter name for a user account (leave empty to skip): " 
 read -r username  
-# read -r -p "Please enter name for a user account (leave empty to skip): " username
 
 # Setting password.
 if [[ -n $username ]]; then
@@ -91,12 +89,10 @@ fi
 # Choose locales.
 input_print "Please insert the locale you use in this format (xx_XX, en_US): " 
 read -r locale  
-# read -r -p "Please insert the locale you use in this format (xx_XX): " locale
 
 # Choose keyboard layout.
 input_print "Please insert the keyboard layout you use (xx, us): " 
 read -r kblayout 
-# read -r -p "Please insert the keyboard layout you use: " kblayout
 
 ## installation ##
 info_print "Installing P U R E - A R C H".
@@ -215,8 +211,8 @@ EOF
 chmod 600 /mnt/@/.snapshots/1/info.xml
 
 # Mounting the newly created subvolumes.
-umount /mnt
 info_print "Mounting the newly created subvolumes."
+umount /mnt
 mount -o ssd,noatime,space_cache,compress=zstd:15 $BTRFS /mnt
 mkdir -p /mnt/{boot,root,home,.snapshots,srv,tmp,/var/log,/var/crash,/var/cache,/var/tmp,/var/spool,/var/lib/libvirt/images,/var/lib/machines,/var/lib/gdm,/var/lib/AccountsService,/cryptkey}
 mount -o ssd,noatime,space_cache=v2,autodefrag,compress=zstd:15,discard=async,nodev,nosuid,noexec,subvol=@/boot $BTRFS /mnt/boot
@@ -275,8 +271,9 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "man" for manual pages
 # "sudo" to run commands as other users
 # "zram-generator" configure zram swap devices
+# "git" version management
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
@@ -284,7 +281,8 @@ genfstab -U /mnt >> /mnt/etc/fstab
 sed -i 's#,subvolid=258,subvol=/@/.snapshots/1/snapshot,subvol=@/.snapshots/1/snapshot##g' /mnt/etc/fstab
 
 # Setting hostname.
-read -r -p "Please enter the hostname: " hostname
+input_print "Please enter the hostname: " 
+read -r hostname  
 echo "$hostname" > /mnt/etc/hostname
 
 # Setting hosts file.
@@ -296,16 +294,18 @@ cat > /mnt/etc/hosts <<EOF
 EOF
 
 # Setting up locales.
+info_print "Setting locales."
 echo "$locale.UTF-8 UTF-8"  > /mnt/etc/locale.gen
 echo "LANG=$locale.UTF-8" > /mnt/etc/locale.conf
 
+# Setting up keyboard layout.
+input_print "Setting keyboard layout." 
+echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
+
 # Setting up pacman
+info_print "Setting pacman configuration."
 sed -i 's/#Color/Color/' /mnt/etc/pacman.conf
 sed -i 's/#ParallelDownloads/ParallelDownloads/' /mnt/etc/pacman.conf
-
-# Setting up keyboard layout.
-read -r -p "Please insert the keyboard layout you use: " kblayout
-echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
 
 # Configuring /etc/mkinitcpio.conf
 info_print "Configuring /etc/mkinitcpio for ZSTD compression and LUKS hook."
@@ -432,15 +432,19 @@ arch-chroot /mnt /bin/bash -e <<EOF
 EOF
 
 # Setting user password.
+info_print "Setting user password."
 [ -n "$username" ] && echo "Setting user password for ${username}." && echo -e "${password}\n${password}" | arch-chroot /mnt passwd "$username" &>/dev/null
 
 # Giving wheel user sudo access.
+info_print "Setting user sudo access"
 sed -i 's/# \(%wheel ALL=(ALL\(:ALL\|\)) ALL\)/\1/g' /mnt/etc/sudoers
 
 # Change audit logging group
+info_print "Changing audit logging group"
 echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 
 info_print "Enabling services"
+
 # Enabling audit service.
 systemctl enable auditd --root=/mnt &>/dev/null
 
