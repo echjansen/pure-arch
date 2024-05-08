@@ -202,9 +202,38 @@ mkdir -p /mnt/boot/efi
 mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 
 # Pacstrap (setting up a base sytem onto the new root).
-# As I said above, I am considering replacing gnome-software with pamac-flatpak-gnome as PackageKit seems very buggy on Arch Linux right now.
-echo "Installing the base system (it may take a while)."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector chrony sbctl openssh fwupd
+# This will install some packages to "bootstrap" methaphorically our system.
+# "base, linux, linux-firmware" are needed. If you want a more stable kernel, then swap linux with linux-lts
+# "base-devel" base development packages
+# "efibootmgr" support EFI boot
+# "git" to install the git vcs
+# "btrfs-progs" are user-space utilities for file system management ( needed to harness the potential of btrfs )
+# "grub" the bootloader
+# "grub-btrfs" support for btrfgs in grub
+# "snapper" creating btrfs snapshots
+# "snap-pac" create snapshots automatically in pacman actions
+# "inotify-tools" support snapper
+# "efibootmgr" needed to install grub
+# "grub-btrfs" adds btrfs support for the grub bootloader and enables the user to directly boot from snapshots
+# "inotify-tools" used by grub btrfsd deamon to automatically spot new snapshots and update grub entries
+# "timeshift" a GUI app to easily create,plan and restore snapshots using BTRFS capabilities
+# "intel(amd)-ucode" microcode updates for the cpu. If you have an intel one use "intel-ucode"
+# "firewalld" firewall services
+# "apparmor" restrict applications access
+# "sbctl" secure boot manager
+# "fwupd" make updating firmware on Linux automatic
+# "mg" micro emacs editor
+# "chrony" secure NTP alternative
+# "networkmanager" to manage Internet connections both wired and wireless ( it also has an applet package network-manager-applet )
+# "pipewire pipewire-alsa pipewire-pulse pipewire-jack" for the new audio framework replacing pulse and jack. 
+# "wireplumber" the pipewire session manager.
+# "reflector" to manage mirrors for pacman
+# "openssh" to use ssh and manage keys
+# "man" for manual pages
+# "sudo" to run commands as other users
+# "zram-generator" configure zram swap devices
+echo "Installing the base system, please wait ..."
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man
 
 # Generating /etc/fstab.
 echo "Generating a new fstab."
