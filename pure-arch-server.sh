@@ -30,10 +30,10 @@ error_print () {
 # Selecting the kernel flavor to install.
 kernel_selector () {
     info_print "List of kernels:"
-    info_print "List of kernels:"
-    info_print "1) Stable: Vanilla Linux kernel with a few specific Arch Linux patches applied"
-    info_print "2) Hardened: A security-focused Linux kernel"
-    info_print "3) Longterm: Long-term support (LTS) Linux kernel"
+    info_print "================"
+    info_print "1) Stable:     Vanilla Linux kernel with a few specific Arch Linux patches applied"
+    info_print "2) Hardened:   A security-focused Linux kernel"
+    info_print "3) Longterm:   Long-term support (LTS) Linux kernel"
     info_print "4) Zen Kernel: A Linux kernel optimized for desktop usage"
     input_print "Please select the number of the corresponding kernel (e.g. 1): " 
     read -r choice    
@@ -55,19 +55,21 @@ kernel_selector () {
 ## user input ##
 
 # Selecting the target for the installation.
-PS3="Select the disk where Arch Linux is going to be installed: "
+PS3="${BOLD}${BYELLOW}Select the disk where Arch Linux is going to be installed: ${RESET}"
 select ENTRY in $(lsblk -dpnoNAME|grep -P "/dev/sd|nvme|vd");
 do
     DISK=$ENTRY
-    echo "Installing Arch Linux on $DISK."
+    info_print "Installing Arch Linux on $DISK."
     break
 done
 
 # Confirming the disk selection.
-read -r -p "This will delete the current partition table on $DISK. Do you agree [y/N]? " response
+input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?" 
+read -r response    
+# read -r -p "This will delete the current partition table on $DISK. Do you agree [y/N]? " response
 response=${response,,}
 if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
-    echo "Quitting."
+    error_print "No selected. Quitting the installation."
     exit
 fi
 
@@ -75,18 +77,26 @@ fi
 kernel_selector
 
 # Setting username.
-read -r -p "Please enter name for a user account (leave empty to skip): " username
+input_print "Please enter name for a user account (leave empty to skip): " 
+read -r username  
+# read -r -p "Please enter name for a user account (leave empty to skip): " username
 
 # Setting password.
 if [[ -n $username ]]; then
-    read -r -p "Please enter a password for the user account: " password
+    input_print "Please enter a password for the user account: " 
+    read -r password
+    # read -r -p "Please enter a password for the user account: " password
 fi
 
 # Choose locales.
-read -r -p "Please insert the locale you use in this format (xx_XX): " locale
+input_print "Please insert the locale you use in this format (xx_XX, en_US): " 
+read -r locale  
+# read -r -p "Please insert the locale you use in this format (xx_XX): " locale
 
 # Choose keyboard layout.
-read -r -p "Please insert the keyboard layout you use: " kblayout
+input_print "Please insert the keyboard layout you use (xx, us): " 
+read -r kblayout 
+# read -r -p "Please insert the keyboard layout you use: " kblayout
 
 ## installation ##
 info_print "Installing P U R E - A R C H".
