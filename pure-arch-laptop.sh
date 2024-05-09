@@ -265,8 +265,7 @@ intro_print "Installing P U R E - A R C H :"
 
 # Speed-up the pacman download
 info_print "Speed up pacman download"
-sed -i 's/#Color/Color/' /etc/pacman.conf
-sed -i 's/#ParallelDownloads/ParallelDownloads/' /etc/pacman.conf
+sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /etc/pacman.conf
 
 # Updating the live environment usually causes more problems than its worth, and quite often can't be done without remounting cowspace with more capacity, especially at the end of any given month.
 info_print "Updating pacman"
@@ -471,7 +470,6 @@ echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
 
 # Setting up pacman
 info_print "Setting pacman configuration."
-info_print "Enabling colours, animations, and parallel downloads for pacman."
 sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /mnt/etc/pacman.conf
 
 # Configuring /etc/mkinitcpio.conf
