@@ -576,25 +576,38 @@ arch-chroot /mnt hwclock --systohc
 info_print "... Configuring locales."
 arch-chroot /mnt locale-gen &>/dev/null
 
-info_print "... Configuring initframs."
-chmod 600 /mnt/boot/initramfs-linux* &>/dev/null
-arch-chroot /mnt mkinitcpio -P &>/dev/null
-
 info_print "... Adding $username with root privilege."
+if [ -n "$username" ]; then
+    arch-chroot /mnt useradd -m $username
+    arch-chroot /mnt usermod -aG wheel $username
+
+    arch-chroot /mnt groupadd -r audit
+    arch-chroot /mnt gpasswd -a $username audit &>/dev/null
+fi
+
+# Setting user password.
+if [[ -n "$username" ]]; then
+    info_print "... Setting $username password."
+    echo "$username:$userpass" | arch-chroot /mnt chpasswd
+fi
+
+# Setting root password.
+info_print "... Setting root password."
+echo "root:$rootpass" | arch-chroot /mnt chpasswd
+
+# Giving wheel user sudo access.
+info_print "... Setting user sudo access"
+sed -i 's/# \(%wheel ALL=(ALL\(:ALL\|\)) ALL\)/\1/g' /mnt/etc/sudoers
+
+# Change audit logging group
+info_print "... Adding audit to logging group"
+echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
+
 info_print "... Installing GRUB on /boot."
 info_print "... Configuring GRUB config file."
 info_print "... Configuring snapshots."
 
 arch-chroot /mnt /bin/bash -e <<EOF
-
-    # Setting up timezone.
-    # ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
-
-    # Setting up clock.
-    # hwclock --systohc
-
-    # Generating locales.my keys aren't even on
-    # locale-gen &>/dev/null
 
     # Generating a new initramfs.
     chmod 600 /boot/initramfs-linux* &>/dev/null
@@ -607,13 +620,13 @@ arch-chroot /mnt /bin/bash -e <<EOF
     grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
 
     # Adding user with sudo privilege
-    if [ -n "$username" ]; then
-        useradd -m $username &>/dev/null
-        usermod -aG wheel $username &>/dev/null
+    # if [ -n "$username" ]; then
+    #     useradd -m $username &>/dev/null
+    #     usermod -aG wheel $username &>/dev/null
 
-        groupadd -r audit &>/dev/null
-        gpasswd -a $username audit &>/dev/null
-    fi
+    #     groupadd -r audit &>/dev/null
+    #     gpasswd -a $username audit &>/dev/null
+    # fi
 
     # Snapper configuration
     umount /.snapshots
@@ -624,24 +637,6 @@ arch-chroot /mnt /bin/bash -e <<EOF
     mount -a
     chmod 750 /.snapshots    
 EOF
-
-# Setting root password.
-info_print "Setting root password."
-echo "root:$rootpass" | arch-chroot /mnt chpasswd
-
-# Setting user password.
-if [[ -n "$username" ]]; then
-    info_print "Setting user password for $username."
-    echo "$username:$userpass" | arch-chroot /mnt chpasswd
-fi
-
-# Giving wheel user sudo access.
-info_print "Setting user sudo access"
-sed -i 's/# \(%wheel ALL=(ALL\(:ALL\|\)) ALL\)/\1/g' /mnt/etc/sudoers
-
-# Change audit logging group
-info_print "Changing audit logging group"
-echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 
 info_print "Enabling services"
 
