@@ -13,6 +13,10 @@ BYELLOW='\e[93m'
 RESET='\e[0m'
 
 # Pretty print (function).
+intro_print () {
+    echo -e "${BOLD}${BGREEN}$1${RESET}"
+}
+
 info_print () {
     echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ] $1${RESET}"
 }
@@ -27,8 +31,8 @@ error_print () {
     echo -e "${BOLD}${BRED}[ ${BBLUE}•${BRED} ] $1${RESET}"
 }
 
-info_print "Welcome to P U R E - A R C H installer"
-info_print "======================================"
+intro_print "Welcome to P U R E - A R C H installer"
+intro_print "======================================"
 
 # Selecting the kernel flavor to install.
 kernel_selector () {
@@ -353,14 +357,14 @@ sed -i 's/#write-cache/write-cache/g' /mnt/etc/apparmor/parser.conf
 sed -i 's,#Include /etc/apparmor.d/,Include /etc/apparmor.d/,g' /mnt/etc/apparmor/parser.conf
 
 # Blacklisting kernel modules
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/modprobe.d/30_security-misc.conf -o /mnt/etc/modprobe.d/30_security-misc.conf
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/modprobe.d/30_security-misc.conf -o /mnt/etc/modprobe.d/30_security-misc.conf &>/dev/null
 chmod 600 /mnt/etc/modprobe.d/*
 
 # Security kernel settings.
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/usr/lib/sysctl.d/990-security-misc.conf -o /mnt/etc/sysctl.d/990-security-misc.conf
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/usr/lib/sysctl.d/990-security-misc.conf -o /mnt/etc/sysctl.d/990-security-misc.conf &>/dev/null
 sed -i 's/kernel.yama.ptrace_scope=2/kernel.yama.ptrace_scope=3/g' /mnt/etc/sysctl.d/990-security-misc.conf
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_silent-kernel-printk.conf -o /mnt/etc/sysctl.d/30_silent-kernel-printk.conf
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_security-misc_kexec-disable.conf -o /mnt/etc/sysctl.d/30_security-misc_kexec-disable.conf
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_silent-kernel-printk.conf -o /mnt/etc/sysctl.d/30_silent-kernel-printk.conf &>/dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_security-misc_kexec-disable.conf -o /mnt/etc/sysctl.d/30_security-misc_kexec-disable.conf &>/dev/null
 chmod 600 /mnt/etc/sysctl.d/*
 
 # Remove nullok from system-auth
@@ -391,27 +395,30 @@ EOF
 
 # Configuring the system.
 info_print "Configuring the system - chroot"
+info_print "... Configuring timezone."
+info_print "... Configuring clock."
+info_print "... Configuring locales."
+info_print "... Configuring initframs."
+info_print "... Configuring snapshots."
+info_print "... Installing GRUB on /boot."
+info_print "... Configuring GRUB config file."
+info_print "Adding $username with root privilege."
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
-    info_print "... Configuring timezone."
     ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
 
     # Setting up clock.
-    info_print "... Configuring clock."
     hwclock --systohc
 
     # Generating locales.my keys aren't even on
-    info_print "... Configuring locales."
     locale-gen &>/dev/null
 
     # Generating a new initramfs.
-    info_print "... Configuring initframs."
     chmod 600 /boot/initramfs-linux* &>/dev/null
     mkinitcpio -P &>/dev/null
 
     # Snapper configuration
-    info_print "... Configuring snapshots."
     umount /.snapshots
     rm -r /.snapshots
     snapper --no-dbus -c root create-config /
@@ -421,16 +428,13 @@ arch-chroot /mnt /bin/bash -e <<EOF
     chmod 750 /.snapshots
 
     # Installing GRUB.
-    info_print "... Installing GRUB on /boot."    
     grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock &>/dev/null
 
     # Creating grub config file.
-    info_print "... Configuring GRUB config file."
     grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
 
     # Adding user with sudo privilege
     if [ -n "$username" ]; then
-        info_print "Adding $username with root privilege."
         useradd -m $username
         usermod -aG wheel $username
 
