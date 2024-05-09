@@ -27,6 +27,9 @@ error_print () {
     echo -e "${BOLD}${BRED}[ ${BBLUE}•${BRED} ] $1${RESET}"
 }
 
+info_print "Welcome to P U R E - A R C H installer"
+info_print "======================================"
+
 # Selecting the kernel flavor to install.
 kernel_selector () {
     info_print "List of kernels:"
@@ -93,6 +96,10 @@ read -r locale
 # Choose keyboard layout.
 input_print "Please insert the keyboard layout you use (xx, us): " 
 read -r kblayout 
+
+# Choose hostname.
+input_print "Please enter the hostname: " 
+read -r hostname  
 
 ## installation ##
 info_print "Installing P U R E - A R C H".
@@ -280,9 +287,7 @@ info_print "Generating a new fstab."
 genfstab -U /mnt >> /mnt/etc/fstab
 sed -i 's#,subvolid=258,subvol=/@/.snapshots/1/snapshot,subvol=@/.snapshots/1/snapshot##g' /mnt/etc/fstab
 
-# Setting hostname.
-input_print "Please enter the hostname: " 
-read -r hostname  
+info_print "Setting hostname." 
 echo "$hostname" > /mnt/etc/hostname
 
 # Setting hosts file.
@@ -322,16 +327,16 @@ sed -i 's#rootflags=subvol=${rootsubvol}##g' /mnt/etc/grub.d/20_linux_xen
 
 info_print "Securing Linux"
 # Enabling CPU Mitigations
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_cpu_mitigations.cfg -o /mnt/etc/grub.d/40_cpu_mitigations.cfg
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_cpu_mitigations.cfg -o /mnt/etc/grub.d/40_cpu_mitigations.cfg &>/dev/null
 
 # Distrusting the CPU
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_distrust_cpu.cfg -o /mnt/etc/grub.d/40_distrust_cpu.cfg
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_distrust_cpu.cfg -o /mnt/etc/grub.d/40_distrust_cpu.cfg &>/dev/null
 
 # Enabling IOMMU
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_enable_iommu.cfg -o /mnt/etc/grub.d/40_enable_iommu.cfg
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_enable_iommu.cfg -o /mnt/etc/grub.d/40_enable_iommu.cfg &>/dev/null
 
 # Enabling NTS
-curl https://raw.githubusercontent.com/GrapheneOS/infrastructure/main/chrony.conf -o /mnt/etc/chrony.conf
+curl https://raw.githubusercontent.com/GrapheneOS/infrastructure/main/chrony.conf -o /mnt/etc/chrony.conf &>/dev/null
 
 # Setting GRUB configuration file permissions
 chmod 755 /mnt/etc/grub.d/*
@@ -389,21 +394,24 @@ info_print "Configuring the system - chroot"
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
+    info_print "... Configuring timezone."
     ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
 
     # Setting up clock.
+    info_print "... Configuring clock."
     hwclock --systohc
 
     # Generating locales.my keys aren't even on
-    echo "Generating locales."
+    info_print "... Configuring locales."
     locale-gen &>/dev/null
 
     # Generating a new initramfs.
-    echo "Creating a new initramfs."
+    info_print "... Configuring initframs."
     chmod 600 /boot/initramfs-linux* &>/dev/null
     mkinitcpio -P &>/dev/null
 
     # Snapper configuration
+    info_print "... Configuring snapshots."
     umount /.snapshots
     rm -r /.snapshots
     snapper --no-dbus -c root create-config /
@@ -413,16 +421,16 @@ arch-chroot /mnt /bin/bash -e <<EOF
     chmod 750 /.snapshots
 
     # Installing GRUB.
-    echo "Installing GRUB on /boot."
+    info_print "... Installing GRUB on /boot."    
     grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock &>/dev/null
 
     # Creating grub config file.
-    echo "Creating GRUB config file."
+    info_print "... Configuring GRUB config file."
     grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
 
     # Adding user with sudo privilege
     if [ -n "$username" ]; then
-        echo "Adding $username with root privilege."
+        info_print "Adding $username with root privilege."
         useradd -m $username
         usermod -aG wheel $username
 
@@ -446,41 +454,47 @@ echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 info_print "Enabling services"
 
 # Enabling audit service.
+info_print "... Enabling audit deamon service"
 systemctl enable auditd --root=/mnt &>/dev/null
 
 # Enabling openssh server
+info_print "... Enabling openssh service"
 systemctl enable sshd --root=/mnt &>/dev/null
 
 # Enabling auto-trimming service.
+info_print "... Enabling trimming service"
 systemctl enable fstrim.timer --root=/mnt &>/dev/null
 
 # Enabling NetworkManager.
+info_print "... Enabling network manager service"
 systemctl enable NetworkManager --root=/mnt &>/dev/null
 
 # Enabling AppArmor.
-echo "Enabling AppArmor."
+info_print "... Enabling apparmor service"
 systemctl enable apparmor --root=/mnt &>/dev/null
 
 # Enabling Firewalld.
-echo "Enabling Firewalld."
+info_print "... Enabling firewalld service"
 systemctl enable firewalld --root=/mnt &>/dev/null
 
 # Enabling Reflector timer.
-echo "Enabling Reflector."
+info_print "... Enabling reflector service"
 systemctl enable reflector.timer --root=/mnt &>/dev/null
 
 # Enabling systemd-oomd.
-echo "Enabling systemd-oomd."
+info_print "... Enabling oom daemon"
 systemctl enable systemd-oomd --root=/mnt &>/dev/null
 
 # Disabling systemd-timesyncd
+info_print "... Disabling timesync daemon"
 systemctl disable systemd-timesyncd --root=/mnt &>/dev/null
 
 # Enabling chronyd
+info_print "... Enabling chrony daemon"
 systemctl enable chronyd --root=/mnt &>/dev/null
 
 # Enabling Snapper automatic snapshots.
-info_print "Enabling Snapper and automatic snapshots entries."
+info_print "... Enabling snapper service"
 systemctl enable snapper-timeline.timer --root=/mnt &>/dev/null
 systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
 systemctl enable grub-btrfsd --root=/mnt &>/dev/null
