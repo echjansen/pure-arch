@@ -458,7 +458,7 @@ EOF
 
 # Setting up locales.
 info_print "Setting locales."
-echo "$locale"  > /mnt/etc/locale.gen
+sed -i "/^#$locale/s/^#//" /mnt/etc/locale.gen
 echo "LANG=$locale" > /mnt/etc/locale.conf
 
 # Setting up keyboard layout.
