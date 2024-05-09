@@ -606,8 +606,10 @@ arch-chroot /mnt /bin/bash -e <<EOF
 EOF
 
 # Setting user password.
-info_print "Setting user password."
-[ -n "$username" ] && echo -e "${userpass}\n${userpass}" | arch-chroot /mnt passwd "$username" &>/dev/null
+if [[ -n "$username" ]]; then
+    info_print "Setting user password for $username."
+    echo "$username:$userpass" | arch-chroot /mnt chpasswd
+fi
 
 # Giving wheel user sudo access.
 info_print "Setting user sudo access"
