@@ -418,7 +418,6 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "snapper" creating btrfs snapshots
 # "snap-pac" create snapshots automatically in pacman actions
 # "inotify-tools" support snapper
-# "efibootmgr" needed to install grub
 # "grub-btrfs" adds btrfs support for the grub bootloader and enables the user to directly boot from snapshots
 # "inotify-tools" used by grub btrfsd deamon to automatically spot new snapshots and update grub entries
 # "timeshift" a GUI app to easily create,plan and restore snapshots using BTRFS capabilities
@@ -440,7 +439,7 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "git" version management
 # "chezmoi" dotfile management
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git chezmoi &>/dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git chezmoi mg &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
