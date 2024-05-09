@@ -31,8 +31,10 @@ error_print () {
     echo -e "${BOLD}${BRED}[ ${BBLUE}•${BRED} ] $1${RESET}"
 }
 
+intro_print "======================================"
 intro_print "Welcome to P U R E - A R C H installer"
 intro_print "======================================"
+intro_print " "
 
 # Selecting the kernel flavor to install.
 kernel_selector () {
@@ -44,7 +46,6 @@ kernel_selector () {
     info_print "4) Zen Kernel: A Linux kernel optimized for desktop usage"
     input_print "Please select the number of the corresponding kernel (e.g. 1): " 
     read -r choice    
-    info_print "$choice will be installed"
     case $choice in
         1 ) kernel=linux
             ;;
@@ -106,7 +107,8 @@ input_print "Please enter the hostname: "
 read -r hostname  
 
 ## installation ##
-info_print "Installing P U R E - A R C H".
+intro_print " ".
+intro_print "Installing P U R E - A R C H".
 
 # Speed-up the pacman download
 info_print "Speed up pacman download"
@@ -308,7 +310,7 @@ echo "$locale.UTF-8 UTF-8"  > /mnt/etc/locale.gen
 echo "LANG=$locale.UTF-8" > /mnt/etc/locale.conf
 
 # Setting up keyboard layout.
-input_print "Setting keyboard layout." 
+info_print "Setting keyboard layout." 
 echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
 
 # Setting up pacman
@@ -400,9 +402,10 @@ info_print "... Configuring clock."
 info_print "... Configuring locales."
 info_print "... Configuring initframs."
 info_print "... Configuring snapshots."
+info_print "... Adding $username with root privilege."
 info_print "... Installing GRUB on /boot."
 info_print "... Configuring GRUB config file."
-info_print "Adding $username with root privilege."
+
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
@@ -435,17 +438,18 @@ arch-chroot /mnt /bin/bash -e <<EOF
 
     # Adding user with sudo privilege
     if [ -n "$username" ]; then
-        useradd -m $username
-        usermod -aG wheel $username
+        useradd -m $username &>/dev/null
+        usermod -aG wheel $username &>/dev/null
 
-        groupadd -r audit
-        gpasswd -a $username audit
+        groupadd -r audit &>/dev/null
+        gpasswd -a $username audit &>/dev/null
     fi
 EOF
 
 # Setting user password.
 info_print "Setting user password."
-[ -n "$username" ] && echo "Setting user password for ${username}." && echo -e "${password}\n${password}" | arch-chroot /mnt passwd "$username" &>/dev/null
+# [ -n "$username" ] && echo "Setting user password for ${username}." && echo -e "${password}\n${password}" | arch-chroot /mnt passwd "$username" &>/dev/null
+[ -n "$username" ] && echo -e "${password}\n${password}" | arch-chroot /mnt passwd "$username" &>/dev/null
 
 # Giving wheel user sudo access.
 info_print "Setting user sudo access"
