@@ -255,6 +255,9 @@ until kernel_selector; do : ; done
 # Entering username and password.
 until userpass_selector; do : ; done
 
+# Setting up LUKS password.
+until lukspass_selector; do : ; done
+
 # User choses the hostname.
 until hostname_selector; do : ; done
 
@@ -314,10 +317,10 @@ mkfs.fat -F 32 -s 2 $ESP &>/dev/null
 
 # Creating a LUKS Container for the root partition.
 info_print "Creating LUKS Container for the root partition."
-cryptsetup luksFormat --type luks1 $cryptroot
+echo -n "$password" | cryptsetup luksFormat --type luks1 $cryptroot -d - &>/dev/null
 
 info_print "Opening the newly created LUKS Container."
-cryptsetup open $cryptroot cryptroot
+echo -n "$password" | cryptsetup open $cryptroot cryptroot -d -
 BTRFS="/dev/mapper/cryptroot"
 
 # Formatting the LUKS Container as BTRFS.
