@@ -436,12 +436,12 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "sudo" to run commands as other users
 # "zram-generator" configure zram swap devices
 # "git" version management
-# "gpg" gnu pretty good privacy
+# "gnupg" gnu pretty good privacy
 # "xdg-user-dirs" home folder subdirectories
 # "chezmoi" dotfile management
 # "rbw" bitwarden password client
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gpg rbw xdg-user-dirs chezmoi mg &>/dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gnupg rbw xdg-user-dirs chezmoi mg &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
