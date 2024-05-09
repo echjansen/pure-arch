@@ -229,15 +229,6 @@ do
     break
 done
 
-# Confirming the disk selection.
-input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?" 
-read -r response    
-response=${response,,}
-if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
-    error_print "No selected. Quitting the installation."
-    exit
-fi
-
 # Select kernel
 until kernel_selector; do : ; done
 
@@ -258,6 +249,16 @@ until keyboard_selector; do : ; done
 
 # Setting up locale language.
 until locale_selector; do : ; done
+
+# Confirming the disk selection.
+info_print "Ready to start installation."
+input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?" 
+read -r response    
+response=${response,,}
+if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
+    error_print "No selected. Quitting the installation."
+    exit
+fi
 
 ## installation ##
 intro_print " ".
