@@ -55,6 +55,32 @@ kernel_selector () {
     esac
 }
 
+# Virtualization check (function).
+virt_check () {
+    hypervisor=$(systemd-detect-virt)
+    case $hypervisor in
+        kvm )   info_print "KVM has been detected, setting up guest tools."
+                pacstrap /mnt qemu-guest-agent &>/dev/null
+                systemctl enable qemu-guest-agent --root=/mnt &>/dev/null
+                ;;
+        vmware  )   info_print "VMWare Workstation/ESXi has been detected, setting up guest tools."
+                    pacstrap /mnt open-vm-tools >/dev/null
+                    systemctl enable vmtoolsd --root=/mnt &>/dev/null
+                    systemctl enable vmware-vmblock-fuse --root=/mnt &>/dev/null
+                    ;;
+        oracle )    info_print "VirtualBox has been detected, setting up guest tools."
+                    pacstrap /mnt virtualbox-guest-utils &>/dev/null
+                    systemctl enable vboxservice --root=/mnt &>/dev/null
+                    ;;
+        microsoft ) info_print "Hyper-V has been detected, setting up guest tools."
+                    pacstrap /mnt hyperv &>/dev/null
+                    systemctl enable hv_fcopy_daemon --root=/mnt &>/dev/null
+                    systemctl enable hv_kvp_daemon --root=/mnt &>/dev/null
+                    systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
+                    ;;
+    esac
+}
+
 # Selecting a way to handle internet connection (function).
 network_selector () {
     info_print "Network utilities:"
@@ -252,8 +278,14 @@ fi
 # Select kernel
 until kernel_selector; do : ; done
 
+# User choses the network.
+until network_selector; do : ; done
+
 # Entering username and password.
 until userpass_selector; do : ; done
+
+# Entering root password.
+until rootpass_selector; do : ; done
 
 # Setting up LUKS password.
 until lukspass_selector; do : ; done
@@ -512,7 +544,8 @@ chmod 755 /mnt/etc/grub.d/*
 # Adding keyfile to the initramfs to avoid double password.
 dd bs=512 count=4 if=/dev/random of=/mnt/cryptkey/.root.key iflag=fullblock &>/dev/null
 chmod 000 /mnt/cryptkey/.root.key &>/dev/null
-cryptsetup -v luksAddKey /dev/disk/by-partlabel/cryptroot /mnt/cryptkey/.root.key
+echo -n "$password" | cryptsetup -v luksAddKey /dev/disk/by-partlabel/cryptroot /mnt/cryptkey/.root.key -d - &>/dev/null
+
 sed -i "s#quiet#cryptdevice=UUID=$UUID:cryptroot root=$BTRFS lsm=landlock,lockdown,yama,apparmor,bpf cryptkey=rootfs:/cryptkey/.root.key#g" /mnt/etc/default/grub
 sed -i 's#FILES=()#FILES=(/cryptkey/.root.key)#g' /mnt/etc/mkinitcpio.conf
 
@@ -608,6 +641,10 @@ arch-chroot /mnt /bin/bash -e <<EOF
     fi
 EOF
 
+# Setting root password.
+info_print "Setting root password."
+echo "root:$rootpass" | arch-chroot /mnt chpasswd
+
 # Setting user password.
 if [[ -n "$username" ]]; then
     info_print "Setting user password for $username."
@@ -675,28 +712,11 @@ sed -i 's/022/077/g' /mnt/etc/profile
 echo "" >> /mnt/etc/bash.bashrc
 echo "umask 077" >> /mnt/etc/bash.bashrc
 
-hypervisor=$(systemd-detect-virt)
-case $hypervisor in
-    kvm )   info_print "KVM has been detected, setting up guest tools."
-            pacstrap /mnt qemu-guest-agent &>/dev/null
-            systemctl enable qemu-guest-agent --root=/mnt &>/dev/null
-            ;;
-    vmware  )   info_print "VMWare Workstation/ESXi has been detected, setting up guest tools."
-                pacstrap /mnt open-vm-tools >/dev/null
-                systemctl enable vmtoolsd --root=/mnt &>/dev/null
-                systemctl enable vmware-vmblock-fuse --root=/mnt &>/dev/null
-                ;;
-    oracle )    info_print "VirtualBox has been detected, setting up guest tools."
-                pacstrap /mnt virtualbox-guest-utils &>/dev/null
-                systemctl enable vboxservice --root=/mnt &>/dev/null
-                ;;
-    microsoft ) info_print "Hyper-V has been detected, setting up guest tools."
-                pacstrap /mnt hyperv &>/dev/null
-                systemctl enable hv_fcopy_daemon --root=/mnt &>/dev/null
-                systemctl enable hv_kvp_daemon --root=/mnt &>/dev/null
-                systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
-                ;;
-esac
+# Setting up the network.
+network_installer
+
+# Setting virtual system - if present
+virt_check
 
 # Finishing up
 intro_print " "
