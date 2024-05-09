@@ -425,7 +425,7 @@ arch-chroot /mnt /bin/bash -e <<EOF
     umount /.snapshots
     rm -r /.snapshots
     snapper --no-dbus -c root create-config /
-    btrfs subvolume delete /.snapshots
+    btrfs subvolume delete /.snapshots &>/dev/null
     mkdir /.snapshots
     mount -a
     chmod 750 /.snapshots
@@ -536,5 +536,7 @@ case $hypervisor in
 esac
 
 # Finishing up
-info_print "Done, you may now wish to reboot (further changes can be done by chrooting into /mnt)."
+intro_print " "
+intro_print "Done, you may now wish to reboot (further changes can be done by chrooting into /mnt)."
+intro_print "======================================================================================"
 exit
