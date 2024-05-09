@@ -485,21 +485,27 @@ sed -i 's#rootflags=subvol=${rootsubvol}##g' /mnt/etc/grub.d/20_linux_xen
 
 info_print "Securing Linux"
 # Enabling CPU Mitigations
+info_print "... Enabling CPU mitigation."
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_cpu_mitigations.cfg -o /mnt/etc/grub.d/40_cpu_mitigations.cfg &>/dev/null
 
 # Distrusting the CPU
+info_print "... Distrusting the CPU."
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_distrust_cpu.cfg -o /mnt/etc/grub.d/40_distrust_cpu.cfg &>/dev/null
 
 # Enabling IOMMU
+info_print "... Enabling IOMMU."
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_enable_iommu.cfg -o /mnt/etc/grub.d/40_enable_iommu.cfg &>/dev/null
 
 # Enabling NTS
+info_print "... Enabling NTS."
 curl https://raw.githubusercontent.com/GrapheneOS/infrastructure/main/chrony.conf -o /mnt/etc/chrony.conf &>/dev/null
 
 # Setting GRUB configuration file permissions
+info_print "... Setting GRUB configuration permissions."
 chmod 755 /mnt/etc/grub.d/*
 
 # Adding keyfile to the initramfs to avoid double password.
+info_print "... Adding keyfile to initramfs"
 dd bs=512 count=4 if=/dev/random of=/mnt/cryptkey/.root.key iflag=fullblock &>/dev/null
 chmod 000 /mnt/cryptkey/.root.key &>/dev/null
 echo -n "$password" | cryptsetup -v luksAddKey /dev/disk/by-partlabel/cryptroot /mnt/cryptkey/.root.key -d - &>/dev/null
@@ -508,14 +514,17 @@ sed -i "s#quiet#cryptdevice=UUID=$UUID:cryptroot root=$BTRFS lsm=landlock,lockdo
 sed -i 's#FILES=()#FILES=(/cryptkey/.root.key)#g' /mnt/etc/mkinitcpio.conf
 
 # Configure AppArmor Parser caching
+info_print "... Configuring AppArmor parser caching."
 sed -i 's/#write-cache/write-cache/g' /mnt/etc/apparmor/parser.conf
 sed -i 's,#Include /etc/apparmor.d/,Include /etc/apparmor.d/,g' /mnt/etc/apparmor/parser.conf
 
 # Blacklisting kernel modules
+info_print "... Blacklisting kernel modules."
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/modprobe.d/30_security-misc.conf -o /mnt/etc/modprobe.d/30_security-misc.conf &>/dev/null
 chmod 600 /mnt/etc/modprobe.d/*
 
 # Security kernel settings.
+info_print "... Securing kernel settings"
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/usr/lib/sysctl.d/990-security-misc.conf -o /mnt/etc/sysctl.d/990-security-misc.conf &>/dev/null
 sed -i 's/kernel.yama.ptrace_scope=2/kernel.yama.ptrace_scope=3/g' /mnt/etc/sysctl.d/990-security-misc.conf
 curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_silent-kernel-printk.conf -o /mnt/etc/sysctl.d/30_silent-kernel-printk.conf &>/dev/null
@@ -523,12 +532,15 @@ curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysct
 chmod 600 /mnt/etc/sysctl.d/*
 
 # Remove nullok from system-auth
+info_print "... Removing nullok from system-auth."
 sed -i 's/nullok//g' /mnt/etc/pam.d/system-auth
 
 # Disable coredump
+info_print "... Disabling coredump."
 echo "* hard core 0" >> /mnt/etc/security/limits.conf
 
 # Disable su for non-wheel users
+info_print "... Disabling su for non-wheel users."
 bash -c 'cat > /mnt/etc/pam.d/su' <<-'EOF'
 #%PAM-1.0
 auth		sufficient	pam_rootok.so
@@ -542,6 +554,7 @@ session		required	pam_unix.so
 EOF
 
 # ZRAM configuration
+info_print "Configuring zram."
 bash -c 'cat > /mnt/etc/systemd/zram-generator.conf' <<-'EOF'
 [zram0]
 zram-fraction = 1
@@ -666,6 +679,7 @@ systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
 systemctl enable grub-btrfsd --root=/mnt &>/dev/null
 
 # Setting umask to 077.
+info_print "umask to 077"
 sed -i 's/022/077/g' /mnt/etc/profile
 echo "" >> /mnt/etc/bash.bashrc
 echo "umask 077" >> /mnt/etc/bash.bashrc
