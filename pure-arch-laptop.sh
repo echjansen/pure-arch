@@ -565,38 +565,39 @@ EOF
 
 # Configuring the system.
 info_print "Configuring the system - chroot"
+
 info_print "... Configuring timezone."
+arch-chroot /mnt ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
+
 info_print "... Configuring clock."
+arch-chroot /mnt hwclock --systohc
+
 info_print "... Configuring locales."
+arch-chroot /mnt locale-gen &>/dev/null
+
 info_print "... Configuring initframs."
-info_print "... Configuring snapshots."
+chmod 600 /mnt/boot/initramfs-linux* &>/dev/null
+arch-chroot /mnt mkinitcpio -P &>/dev/null
+
 info_print "... Adding $username with root privilege."
 info_print "... Installing GRUB on /boot."
 info_print "... Configuring GRUB config file."
+info_print "... Configuring snapshots."
 
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Setting up timezone.
-    ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
+    # ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
 
     # Setting up clock.
-    hwclock --systohc
+    # hwclock --systohc
 
     # Generating locales.my keys aren't even on
-    locale-gen &>/dev/null
+    # locale-gen &>/dev/null
 
     # Generating a new initramfs.
     chmod 600 /boot/initramfs-linux* &>/dev/null
     mkinitcpio -P &>/dev/null
-
-    # Snapper configuration
-    umount /.snapshots
-    rm -r /.snapshots
-    snapper --no-dbus -c root create-config /
-    btrfs subvolume delete /.snapshots &>/dev/null
-    mkdir /.snapshots
-    mount -a
-    chmod 750 /.snapshots
 
     # Installing GRUB.
     grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock &>/dev/null
@@ -612,6 +613,15 @@ arch-chroot /mnt /bin/bash -e <<EOF
         groupadd -r audit &>/dev/null
         gpasswd -a $username audit &>/dev/null
     fi
+
+    # Snapper configuration
+    umount /.snapshots
+    rm -r /.snapshots
+    snapper --no-dbus -c root create-config /
+    btrfs subvolume delete /.snapshots &>/dev/null
+    mkdir /.snapshots
+    mount -a
+    chmod 750 /.snapshots    
 EOF
 
 # Setting root password.
