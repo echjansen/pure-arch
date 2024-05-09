@@ -81,45 +81,6 @@ virt_check () {
     esac
 }
 
-# Selecting a way to handle internet connection (function).
-network_selector () {
-    info_print "Network utilities:"
-    info_print "1) IWD: Utility to connect to networks written by Intel (WiFi-only, built-in DHCP client)"
-    info_print "2) NetworkManager: Universal network utility (both WiFi and Ethernet, highly recommended)"
-    info_print "3) wpa_supplicant: Utility with support for WEP and WPA/WPA2 (WiFi-only, DHCPCD will be automatically installed)"
-    info_print "4) dhcpcd: Basic DHCP client (Ethernet connections or VMs)"
-    info_print "5) I will do this on my own (only advanced users)"
-    input_print "Please select the number of the corresponding networking utility (e.g. 1): "
-    read -r network_choice
-    if ! ((1 <= network_choice <= 5)); then
-        error_print "You did not enter a valid selection, please try again."
-        return 1
-    fi
-    return 0
-}
-
-# Installing the chosen networking method to the system (function).
-network_installer () {
-    case $network_choice in
-        1 ) info_print "Installing and enabling IWD."
-            pacstrap /mnt iwd >/dev/null
-            systemctl enable iwd --root=/mnt &>/dev/null
-            ;;
-        2 ) info_print "Installing and enabling NetworkManager."
-            pacstrap /mnt networkmanager >/dev/null
-            systemctl enable NetworkManager --root=/mnt &>/dev/null
-            ;;
-        3 ) info_print "Installing and enabling wpa_supplicant and dhcpcd."
-            pacstrap /mnt wpa_supplicant dhcpcd >/dev/null
-            systemctl enable wpa_supplicant --root=/mnt &>/dev/null
-            systemctl enable dhcpcd --root=/mnt &>/dev/null
-            ;;
-        4 ) info_print "Installing dhcpcd."
-            pacstrap /mnt dhcpcd >/dev/null
-            systemctl enable dhcpcd --root=/mnt &>/dev/null
-    esac
-}
-
 # User enters a password for the LUKS Container (function).
 lukspass_selector () {
     input_print "Please enter a password for the LUKS container (you're not going to see the password): "
@@ -277,9 +238,6 @@ fi
 
 # Select kernel
 until kernel_selector; do : ; done
-
-# User choses the network.
-until network_selector; do : ; done
 
 # Entering username and password.
 until userpass_selector; do : ; done
@@ -509,8 +467,8 @@ echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
 
 # Setting up pacman
 info_print "Setting pacman configuration."
-sed -i 's/#Color/Color/' /mnt/etc/pacman.conf
-sed -i 's/#ParallelDownloads/ParallelDownloads/' /mnt/etc/pacman.conf
+info_print "Enabling colours, animations, and parallel downloads for pacman."
+sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /mnt/etc/pacman.conf
 
 # Configuring /etc/mkinitcpio.conf
 info_print "Configuring /etc/mkinitcpio for ZSTD compression and LUKS hook."
@@ -711,9 +669,6 @@ systemctl enable grub-btrfsd --root=/mnt &>/dev/null
 sed -i 's/022/077/g' /mnt/etc/profile
 echo "" >> /mnt/etc/bash.bashrc
 echo "umask 077" >> /mnt/etc/bash.bashrc
-
-# Setting up the network.
-network_installer
 
 # Setting virtual system - if present
 virt_check
