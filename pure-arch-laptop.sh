@@ -204,7 +204,7 @@ locale_selector () {
 
 # User chooses the console keyboard layout (function).
 keyboard_selector () {
-    input_print "Please insert the keyboard layout to use in console (enter empty to use US, or \"/\" to look up for keyboard layouts): "
+    input_print "Please insert the keyboard layout (empty to use US, or \"/\" to look up for keyboard layouts): "
     read -r kblayout
     case "$kblayout" in
         '') kblayout="us"
@@ -264,9 +264,12 @@ until hostname_selector; do : ; done
 # Setting up keyboard layout.
 until keyboard_selector; do : ; done
 
+# Setting up locale language.
+until locale_selector; do : ; done
+
 ## installation ##
 intro_print " ".
-intro_print "Installing P U R E - A R C H".
+intro_print "Installing P U R E - A R C H :"
 
 # Speed-up the pacman download
 info_print "Speed up pacman download"
@@ -452,7 +455,7 @@ info_print "Generating a new fstab."
 genfstab -U /mnt >> /mnt/etc/fstab
 sed -i 's#,subvolid=258,subvol=/@/.snapshots/1/snapshot,subvol=@/.snapshots/1/snapshot##g' /mnt/etc/fstab
 
-info_print "Setting hostname." 
+info_print "Setting hostname to $hostame" 
 echo "$hostname" > /mnt/etc/hostname
 
 # Setting hosts file.
@@ -465,8 +468,8 @@ EOF
 
 # Setting up locales.
 info_print "Setting locales."
-echo "$locale.UTF-8 UTF-8"  > /mnt/etc/locale.gen
-echo "LANG=$locale.UTF-8" > /mnt/etc/locale.conf
+echo "$locale"  > /mnt/etc/locale.gen
+echo "LANG=$locale" > /mnt/etc/locale.conf
 
 # Setting up keyboard layout.
 info_print "Setting keyboard layout." 
