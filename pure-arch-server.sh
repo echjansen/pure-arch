@@ -31,11 +31,6 @@ error_print () {
     echo -e "${BOLD}${BRED}[ ${BBLUE}•${BRED} ] $1${RESET}"
 }
 
-intro_print "======================================"
-intro_print "Welcome to P U R E - A R C H installer"
-intro_print "======================================"
-intro_print " "
-
 # Selecting the kernel flavor to install.
 kernel_selector () {
     info_print "List of kernels:"
@@ -60,6 +55,37 @@ kernel_selector () {
     esac
 }
 
+# Setting up a password for the user account (function).
+userpass_selector () {
+    input_print "Please enter name for a user account (enter empty to not create one): "
+    read -r username
+    if [[ -z "$username" ]]; then
+        return 0
+    fi
+    input_print "Please enter a password for $username (you're not going to see the password): "
+    read -r -s userpass
+    if [[ -z "$userpass" ]]; then
+        echo
+        error_print "You need to enter a password for $username, please try again."
+        return 1
+    fi
+    echo
+    input_print "Please enter the password again (you're not going to see it): " 
+    read -r -s userpass2
+    echo
+    if [[ "$userpass" != "$userpass2" ]]; then
+        echo
+        error_print "Passwords don't match, please try again."
+        return 1
+    fi
+    return 0
+}
+
+intro_print "======================================"
+intro_print "Welcome to P U R E - A R C H installer"
+intro_print "======================================"
+intro_print " "
+
 ## user input ##
 
 # Selecting the target for the installation.
@@ -80,19 +106,21 @@ if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
     exit
 fi
 
-#select kernel
+# Select kernel
 kernel_selector
 
-# Setting username.
-input_print "Please enter name for a user account (leave empty to skip): " 
-read -r username  
+# Entering username and password.
+userpass_selector
+
+# input_print "Please enter name for a user account (leave empty to skip): " 
+# read -r username  
 
 # Setting password.
-if [[ -n $username ]]; then
-    input_print "Please enter a password for the user account: " 
-    read -r password
-    # read -r -p "Please enter a password for the user account: " password
-fi
+#if [[ -n $username ]]; then
+#    input_print "Please enter a password for the user account: " 
+#    read -r password
+#    # read -r -p "Please enter a password for the user account: " password
+#fi
 
 # Choose locales.
 input_print "Please insert the locale you use in this format (xx_XX, en_US): " 
@@ -285,8 +313,9 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "sudo" to run commands as other users
 # "zram-generator" configure zram swap devices
 # "git" version management
+# "chezmoi" dotfile management
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git &>/dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git chezmoi &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
@@ -448,8 +477,7 @@ EOF
 
 # Setting user password.
 info_print "Setting user password."
-# [ -n "$username" ] && echo "Setting user password for ${username}." && echo -e "${password}\n${password}" | arch-chroot /mnt passwd "$username" &>/dev/null
-[ -n "$username" ] && echo -e "${password}\n${password}" | arch-chroot /mnt passwd "$username" &>/dev/null
+[ -n "$username" ] && echo -e "${userpass}\n${userpass}" | arch-chroot /mnt passwd "$username" &>/dev/null
 
 # Giving wheel user sudo access.
 info_print "Setting user sudo access"
