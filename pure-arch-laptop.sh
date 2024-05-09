@@ -78,12 +78,14 @@ virt_check () {
                     systemctl enable hv_kvp_daemon --root=/mnt &>/dev/null
                     systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
                     ;;
+        * )         info_print "No virtualisation detected."
+                    ;;
     esac
 }
 
 # User enters a password for the LUKS Container (function).
 lukspass_selector () {
-    input_print "Please enter a password for the LUKS container (you're not going to see the password): "
+    input_print "Please enter a password for the LUKS container (password not visible): "
     read -r -s password
     if [[ -z "$password" ]]; then
         echo
@@ -91,7 +93,7 @@ lukspass_selector () {
         return 1
     fi
     echo
-    input_print "Please enter the password for the LUKS container again (you're not going to see the password): "
+    input_print "Please enter the password for the LUKS container again (password not visible): "
     read -r -s password2
     echo
     if [[ "$password" != "$password2" ]]; then
@@ -108,7 +110,7 @@ userpass_selector () {
     if [[ -z "$username" ]]; then
         return 0
     fi
-    input_print "Please enter a password for $username (you're not going to see the password): "
+    input_print "Please enter a password for $username (password not visible): "
     read -r -s userpass
     if [[ -z "$userpass" ]]; then
         echo
@@ -116,7 +118,7 @@ userpass_selector () {
         return 1
     fi
     echo
-    input_print "Please enter the password again (you're not going to see it): " 
+    input_print "Please enter the password again (password not visible): " 
     read -r -s userpass2
     echo
     if [[ "$userpass" != "$userpass2" ]]; then
@@ -129,7 +131,7 @@ userpass_selector () {
 
 # Setting up a password for the root account (function).
 rootpass_selector () {
-    input_print "Please enter a password for the root user (you're not going to see it): "
+    input_print "Please enter a password for the root user (password not visible): "
     read -r -s rootpass
     if [[ -z "$rootpass" ]]; then
         echo
@@ -137,7 +139,7 @@ rootpass_selector () {
         return 1
     fi
     echo
-    input_print "Please enter the password again (you're not going to see it): " 
+    input_print "Please enter the password again (password not visible): " 
     read -r -s rootpass2
     echo
     if [[ "$rootpass" != "$rootpass2" ]]; then
@@ -172,7 +174,7 @@ hostname_selector () {
 
 # User chooses the locale (function).
 locale_selector () {
-    input_print "Please insert the locale you use (format: xx_XX. Enter empty to use en_US, or \"/\" to search locales): " locale
+    input_print "Please insert the locale you use (format: xx_XX. Enter empty to use -en_US-, or \"/\" to search locales): " locale
     read -r locale
     case "$locale" in
         '') locale="en_US.UTF-8"
@@ -191,7 +193,7 @@ locale_selector () {
 
 # User chooses the console keyboard layout (function).
 keyboard_selector () {
-    input_print "Please insert the keyboard layout (empty to use US, or \"/\" to look up for keyboard layouts): "
+    input_print "Please insert the keyboard layout (empty to use -US-, or \"/\" to look up for keyboard layouts): "
     read -r kblayout
     case "$kblayout" in
         '') kblayout="us"
