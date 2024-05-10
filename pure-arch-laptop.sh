@@ -1,5 +1,7 @@
 #!/usr/bin/env -S bash -e
 
+# To debug replace all "&>/dev/nul" with "1> /dev/null"
+
 # Cleaning the TTY.
 clear
 setfont ter-v22b
