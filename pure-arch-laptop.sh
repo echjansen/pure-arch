@@ -60,23 +60,23 @@ virt_check () {
     hypervisor=$(systemd-detect-virt)
     case $hypervisor in
         kvm )   info_print "KVM has been detected, setting up guest tools."
-                pacstrap /mnt qemu-guest-agent 1> /dev/null
-                systemctl enable qemu-guest-agent --root=/mnt 1> /dev/null
+                pacstrap /mnt qemu-guest-agent &>/dev/null
+                systemctl enable qemu-guest-agent --root=/mnt &>/dev/null
                 ;;
         vmware  )   info_print "VMWare Workstation/ESXi has been detected, setting up guest tools."
                     pacstrap /mnt open-vm-tools >/dev/null
-                    systemctl enable vmtoolsd --root=/mnt 1> /dev/null
-                    systemctl enable vmware-vmblock-fuse --root=/mnt 1> /dev/null
+                    systemctl enable vmtoolsd --root=/mnt &>/dev/null
+                    systemctl enable vmware-vmblock-fuse --root=/mnt &>/dev/null
                     ;;
         oracle )    info_print "VirtualBox has been detected, setting up guest tools."
-                    pacstrap /mnt virtualbox-guest-utils 1> /dev/null
-                    systemctl enable vboxservice --root=/mnt 1> /dev/null
+                    pacstrap /mnt virtualbox-guest-utils &>/dev/null
+                    systemctl enable vboxservice --root=/mnt &>/dev/null
                     ;;
         microsoft ) info_print "Hyper-V has been detected, setting up guest tools."
-                    pacstrap /mnt hyperv 1> /dev/null
-                    systemctl enable hv_fcopy_daemon --root=/mnt 1> /dev/null
-                    systemctl enable hv_kvp_daemon --root=/mnt 1> /dev/null
-                    systemctl enable hv_vss_daemon --root=/mnt 1> /dev/null
+                    pacstrap /mnt hyperv &>/dev/null
+                    systemctl enable hv_fcopy_daemon --root=/mnt &>/dev/null
+                    systemctl enable hv_kvp_daemon --root=/mnt &>/dev/null
+                    systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
                     ;;
         * )         info_print "No virtualisation detected."
                     ;;
@@ -273,16 +273,16 @@ sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /etc/p
 
 # Updating the live environment usually causes more problems than its worth, and quite often can't be done without remounting cowspace with more capacity, especially at the end of any given month.
 info_print "Updating pacman"
-pacman -Sy 1> /dev/null
+pacman -Sy &>/dev/null
 
 # Installing curl
 info_print "Installing curl"
-pacman -S --noconfirm curl 1> /dev/null
+pacman -S --noconfirm curl &>/dev/null
 
 # formatting the disk
 info_print "Formatting disk"
-wipefs -af "$DISK" 1> /dev/null
-sgdisk -Zo "$DISK" 1> /dev/null
+wipefs -af "$DISK" &>/dev/null
+sgdisk -Zo "$DISK" &>/dev/null
 
 # Checking the microcode to install.
 info_print "Checking microcode"
@@ -311,11 +311,11 @@ partprobe "$DISK"
 
 # Formatting the ESP as FAT32.
 info_print "Formatting the EFI Partition as FAT32."
-mkfs.fat -F 32 -s 2 $ESP 1> /dev/null
+mkfs.fat -F 32 -s 2 $ESP &>/dev/null
 
 # Creating a LUKS Container for the root partition.
 info_print "Creating LUKS Container for the root partition."
-echo -n "$password" | cryptsetup luksFormat --type luks1 $cryptroot -d - 1> /dev/null
+echo -n "$password" | cryptsetup luksFormat --type luks1 $cryptroot -d - &>/dev/null
 
 info_print "Opening the newly created LUKS Container."
 echo -n "$password" | cryptsetup open $cryptroot cryptroot -d -
@@ -323,30 +323,30 @@ BTRFS="/dev/mapper/cryptroot"
 
 # Formatting the LUKS Container as BTRFS.
 info_print "Formatting the LUKS container as BTRFS."
-mkfs.btrfs $BTRFS 1> /dev/null
+mkfs.btrfs $BTRFS &>/dev/null
 mount -o clear_cache,nospace_cache $BTRFS /mnt
 
 # Creating BTRFS subvolumes.
 info_print "Creating BTRFS subvolumes."
-btrfs su cr /mnt/@ 1> /dev/null
-btrfs su cr /mnt/@/.snapshots 1> /dev/null
-mkdir -p /mnt/@/.snapshots/1 1> /dev/null
-btrfs su cr /mnt/@/.snapshots/1/snapshot 1> /dev/null
-btrfs su cr /mnt/@/boot/ 1> /dev/null
-btrfs su cr /mnt/@/home 1> /dev/null
-btrfs su cr /mnt/@/root 1> /dev/null
-btrfs su cr /mnt/@/srv 1> /dev/null
-btrfs su cr /mnt/@/var_log 1> /dev/null
-btrfs su cr /mnt/@/var_log_journal 1> /dev/null
-btrfs su cr /mnt/@/var_crash 1> /dev/null
-btrfs su cr /mnt/@/var_cache 1> /dev/null
-btrfs su cr /mnt/@/var_tmp 1> /dev/null
-btrfs su cr /mnt/@/var_spool 1> /dev/null
-btrfs su cr /mnt/@/var_lib_libvirt_images 1> /dev/null
-btrfs su cr /mnt/@/var_lib_machines 1> /dev/null
-btrfs su cr /mnt/@/var_lib_gdm 1> /dev/null
-btrfs su cr /mnt/@/var_lib_AccountsService 1> /dev/null
-btrfs su cr /mnt/@/cryptkey 1> /dev/null
+btrfs su cr /mnt/@ &>/dev/null
+btrfs su cr /mnt/@/.snapshots &>/dev/null
+mkdir -p /mnt/@/.snapshots/1 &>/dev/null
+btrfs su cr /mnt/@/.snapshots/1/snapshot &>/dev/null
+btrfs su cr /mnt/@/boot/ &>/dev/null
+btrfs su cr /mnt/@/home &>/dev/null
+btrfs su cr /mnt/@/root &>/dev/null
+btrfs su cr /mnt/@/srv &>/dev/null
+btrfs su cr /mnt/@/var_log &>/dev/null
+btrfs su cr /mnt/@/var_log_journal &>/dev/null
+btrfs su cr /mnt/@/var_crash &>/dev/null
+btrfs su cr /mnt/@/var_cache &>/dev/null
+btrfs su cr /mnt/@/var_tmp &>/dev/null
+btrfs su cr /mnt/@/var_spool &>/dev/null
+btrfs su cr /mnt/@/var_lib_libvirt_images &>/dev/null
+btrfs su cr /mnt/@/var_lib_machines &>/dev/null
+btrfs su cr /mnt/@/var_lib_gdm &>/dev/null
+btrfs su cr /mnt/@/var_lib_AccountsService &>/dev/null
+btrfs su cr /mnt/@/cryptkey &>/dev/null
 
 chattr +C /mnt/@/boot
 chattr +C /mnt/@/srv
@@ -444,7 +444,7 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "chezmoi" dotfile management
 # "rbw" bitwarden password client
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gnupg rbw xdg-user-dirs chezmoi mg 1> /dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gnupg rbw xdg-user-dirs chezmoi mg &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
@@ -491,19 +491,19 @@ sed -i 's#rootflags=subvol=${rootsubvol}##g' /mnt/etc/grub.d/20_linux_xen
 info_print "Securing Linux"
 # Enabling CPU Mitigations
 info_print "... Enabling CPU mitigation."
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_cpu_mitigations.cfg -o /mnt/etc/grub.d/40_cpu_mitigations.cfg 1> /dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_cpu_mitigations.cfg -o /mnt/etc/grub.d/40_cpu_mitigations.cfg &>/dev/null
 
 # Distrusting the CPU
 info_print "... Distrusting the CPU."
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_distrust_cpu.cfg -o /mnt/etc/grub.d/40_distrust_cpu.cfg 1> /dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_distrust_cpu.cfg -o /mnt/etc/grub.d/40_distrust_cpu.cfg &>/dev/null
 
 # Enabling IOMMU
 info_print "... Enabling IOMMU."
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_enable_iommu.cfg -o /mnt/etc/grub.d/40_enable_iommu.cfg 1> /dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/default/grub.d/40_enable_iommu.cfg -o /mnt/etc/grub.d/40_enable_iommu.cfg &>/dev/null
 
 # Enabling NTS
 info_print "... Enabling NTS."
-curl https://raw.githubusercontent.com/GrapheneOS/infrastructure/main/chrony.conf -o /mnt/etc/chrony.conf 1> /dev/null
+curl https://raw.githubusercontent.com/GrapheneOS/infrastructure/main/chrony.conf -o /mnt/etc/chrony.conf &>/dev/null
 
 # Setting GRUB configuration file permissions
 info_print "... Setting GRUB configuration permissions."
@@ -511,9 +511,9 @@ chmod 755 /mnt/etc/grub.d/*
 
 # Adding keyfile to the initramfs to avoid double password.
 info_print "... Adding keyfile to initramfs"
-dd bs=512 count=4 if=/dev/random of=/mnt/cryptkey/.root.key iflag=fullblock 1> /dev/null
-chmod 000 /mnt/cryptkey/.root.key 1> /dev/null
-echo -n "$password" | cryptsetup -v luksAddKey /dev/disk/by-partlabel/cryptroot /mnt/cryptkey/.root.key -d - 1> /dev/null
+dd bs=512 count=4 if=/dev/random of=/mnt/cryptkey/.root.key iflag=fullblock &>/dev/null
+chmod 000 /mnt/cryptkey/.root.key &>/dev/null
+echo -n "$password" | cryptsetup -v luksAddKey /dev/disk/by-partlabel/cryptroot /mnt/cryptkey/.root.key -d - &>/dev/null
 
 sed -i "s#quiet#cryptdevice=UUID=$UUID:cryptroot root=$BTRFS lsm=landlock,lockdown,yama,apparmor,bpf cryptkey=rootfs:/cryptkey/.root.key#g" /mnt/etc/default/grub
 sed -i 's#FILES=()#FILES=(/cryptkey/.root.key)#g' /mnt/etc/mkinitcpio.conf
@@ -525,15 +525,15 @@ sed -i 's,#Include /etc/apparmor.d/,Include /etc/apparmor.d/,g' /mnt/etc/apparmo
 
 # Blacklisting kernel modules
 info_print "... Blacklisting kernel modules."
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/modprobe.d/30_security-misc.conf -o /mnt/etc/modprobe.d/30_security-misc.conf 1> /dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/modprobe.d/30_security-misc.conf -o /mnt/etc/modprobe.d/30_security-misc.conf &>/dev/null
 chmod 600 /mnt/etc/modprobe.d/*
 
 # Security kernel settings.
 info_print "... Securing kernel settings"
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/usr/lib/sysctl.d/990-security-misc.conf -o /mnt/etc/sysctl.d/990-security-misc.conf 1> /dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/usr/lib/sysctl.d/990-security-misc.conf -o /mnt/etc/sysctl.d/990-security-misc.conf &>/dev/null
 sed -i 's/kernel.yama.ptrace_scope=2/kernel.yama.ptrace_scope=3/g' /mnt/etc/sysctl.d/990-security-misc.conf
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_silent-kernel-printk.conf -o /mnt/etc/sysctl.d/30_silent-kernel-printk.conf 1> /dev/null
-curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_security-misc_kexec-disable.conf -o /mnt/etc/sysctl.d/30_security-misc_kexec-disable.conf 1> /dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_silent-kernel-printk.conf -o /mnt/etc/sysctl.d/30_silent-kernel-printk.conf &>/dev/null
+curl https://raw.githubusercontent.com/Kicksecure/security-misc/master/etc/sysctl.d/30_security-misc_kexec-disable.conf -o /mnt/etc/sysctl.d/30_security-misc_kexec-disable.conf &>/dev/null
 chmod 600 /mnt/etc/sysctl.d/*
 
 # Remove nullok from system-auth
@@ -570,13 +570,13 @@ max-zram-size = 8192
 EOF
 
 info_print "... Configuring timezone."
-arch-chroot /mnt ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime 1> /dev/null
+arch-chroot /mnt ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
 
 info_print "... Configuring clock."
 arch-chroot /mnt hwclock --systohc
 
 info_print "... Configuring locales."
-arch-chroot /mnt locale-gen 1> /dev/null
+arch-chroot /mnt locale-gen &>/dev/null
 
 info_print "... Adding $username with root privilege."
 if [ -n "$username" ]; then
@@ -584,7 +584,7 @@ if [ -n "$username" ]; then
     arch-chroot /mnt usermod -aG wheel $username
 
     arch-chroot /mnt groupadd -r audit
-    arch-chroot /mnt gpasswd -a $username audit 1> /dev/null
+    arch-chroot /mnt gpasswd -a $username audit &>/dev/null
 fi
 
 # Setting user password.
@@ -608,36 +608,36 @@ echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 # Generating a new initramfs.
 info_print "... Create ram disk for kernel modules."
 chmod 600 /mnt/boot/initramfs-linux*
-arch-chroot /mnt mkinitcpio -P 1> /dev/null
+arch-chroot /mnt mkinitcpio -P &>/dev/null
     
 info_print "... Installing GRUB on /boot."
-arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock 1> /dev/null
+arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock &>/dev/null
 
 info_print "... Configuring GRUB config file."
-arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg 1> /dev/null
+arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
 
 # info_print "... Configuring snapshots."
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Generating a new initramfs.
     # echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ] ... Create ram disk for kernel modules.${RESET}"
-    # chmod 600 /boot/initramfs-linux* # 1> /dev/null
-    # mkinitcpio -P # 1> /dev/null
+    # chmod 600 /boot/initramfs-linux* # &>/dev/null
+    # mkinitcpio -P # &>/dev/null
 
     # Installing GRUB.
     # echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Installing GRUB on /boot.${RESET}"
-    # grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock # 1> /dev/null
+    # grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock # &>/dev/null
 
     # Creating grub config file.
     # echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Configuring GRUB config file.${RESET}"
-    # grub-mkconfig -o /boot/grub/grub.cfg # 1> /dev/null
+    # grub-mkconfig -o /boot/grub/grub.cfg # &>/dev/null
 
     # Snapper configuration
     echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Configuring snapshots.${RESET}"
     umount /.snapshots
     rm -r /.snapshots
     snapper --no-dbus -c root create-config /
-    btrfs subvolume delete /.snapshots # 1> /dev/null
+    btrfs subvolume delete /.snapshots # &>/dev/null
     mkdir /.snapshots
     mount -a
     chmod 750 /.snapshots    
@@ -647,49 +647,49 @@ info_print "Enabling services"
 
 # Enabling audit service.
 info_print "... Enabling audit deamon service"
-systemctl enable auditd --root=/mnt 1> /dev/null
+systemctl enable auditd --root=/mnt &>/dev/null
 
 # Enabling openssh server
 info_print "... Enabling openssh service"
-systemctl enable sshd --root=/mnt 1> /dev/null
+systemctl enable sshd --root=/mnt &>/dev/null
 
 # Enabling auto-trimming service.
 info_print "... Enabling trimming service"
-systemctl enable fstrim.timer --root=/mnt 1> /dev/null
+systemctl enable fstrim.timer --root=/mnt &>/dev/null
 
 # Enabling NetworkManager.
 info_print "... Enabling network manager service"
-systemctl enable NetworkManager --root=/mnt 1> /dev/null
+systemctl enable NetworkManager --root=/mnt &>/dev/null
 
 # Enabling AppArmor.
 info_print "... Enabling apparmor service"
-systemctl enable apparmor --root=/mnt 1> /dev/null
+systemctl enable apparmor --root=/mnt &>/dev/null
 
 # Enabling Firewalld.
 info_print "... Enabling firewalld service"
-systemctl enable firewalld --root=/mnt 1> /dev/null
+systemctl enable firewalld --root=/mnt &>/dev/null
 
 # Enabling Reflector timer.
 info_print "... Enabling reflector service"
-systemctl enable reflector.timer --root=/mnt 1> /dev/null
+systemctl enable reflector.timer --root=/mnt &>/dev/null
 
 # Enabling systemd-oomd.
 info_print "... Enabling oom daemon"
-systemctl enable systemd-oomd --root=/mnt 1> /dev/null
+systemctl enable systemd-oomd --root=/mnt &>/dev/null
 
 # Disabling systemd-timesyncd
 info_print "... Disabling timesync daemon"
-systemctl disable systemd-timesyncd --root=/mnt 1> /dev/null
+systemctl disable systemd-timesyncd --root=/mnt &>/dev/null
 
 # Enabling chronyd
 info_print "... Enabling chrony daemon"
-systemctl enable chronyd --root=/mnt 1> /dev/null
+systemctl enable chronyd --root=/mnt &>/dev/null
 
 # Enabling Snapper automatic snapshots.
 info_print "... Enabling snapper service"
-systemctl enable snapper-timeline.timer --root=/mnt 1> /dev/null
-systemctl enable snapper-cleanup.timer --root=/mnt 1> /dev/null
-systemctl enable grub-btrfsd --root=/mnt 1> /dev/null
+systemctl enable snapper-timeline.timer --root=/mnt &>/dev/null
+systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
+systemctl enable grub-btrfsd --root=/mnt &>/dev/null
 
 # Setting umask to 077.
 info_print "umask to 077"
