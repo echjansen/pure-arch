@@ -606,7 +606,7 @@ info_print "... Adding audit to logging group."
 echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 
 # Generating a new initramfs.
-# info_print "... Create ram disk for kernel modules."
+info_print "... Create ram disk for kernel modules."
 chmod 600 /mnt/boot/initramfs-linux*
 arch-chroot /mnt mkinitcpio -P 1> /dev/null
     
