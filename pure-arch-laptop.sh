@@ -617,25 +617,12 @@ arch-chroot /mnt grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
 # info_print "... Configuring snapshots."
 arch-chroot /mnt /bin/bash -e <<EOF
 
-    # Generating a new initramfs.
-    # echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ] ... Create ram disk for kernel modules.${RESET}"
-    # chmod 600 /boot/initramfs-linux* # &>/dev/null
-    # mkinitcpio -P # &>/dev/null
-
-    # Installing GRUB.
-    # echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Installing GRUB on /boot.${RESET}"
-    # grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock # &>/dev/null
-
-    # Creating grub config file.
-    # echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Configuring GRUB config file.${RESET}"
-    # grub-mkconfig -o /boot/grub/grub.cfg # &>/dev/null
-
     # Snapper configuration
-    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Configuring snapshots.${RESET}"
+    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ] ... Configuring snapshots.${RESET}"
     umount /.snapshots
     rm -r /.snapshots
     snapper --no-dbus -c root create-config /
-    btrfs subvolume delete /.snapshots # &>/dev/null
+    btrfs subvolume delete /.snapshots &>/dev/null
     mkdir /.snapshots
     mount -a
     chmod 750 /.snapshots    
