@@ -275,10 +275,6 @@ sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /etc/p
 info_print "Updating pacman"
 pacman -Sy &>/dev/null
 
-# Installing curl
-info_print "Installing curl"
-pacman -S --noconfirm curl &>/dev/null
-
 # formatting the disk
 info_print "Formatting disk"
 wipefs -af "$DISK" &>/dev/null
