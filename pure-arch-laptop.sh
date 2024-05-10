@@ -270,12 +270,16 @@ intro_print "======================================"
 intro_print " "
 
 # Speed-up the pacman download
-info_print "Speed up pacman download"
+info_print "Configuring pacman"
 sed -Ei 's/^#(Color)$/\1\nILoveCandy/;s/^#(ParallelDownloads).*/\1 = 10/' /etc/pacman.conf
 
 # Updating the live environment usually causes more problems than its worth, and quite often can't be done without remounting cowspace with more capacity, especially at the end of any given month.
-info_print "Updating pacman"
+info_print "Updating pacman repository"
 pacman -Sy &>/dev/null
+
+# Installing curl
+info_print "Installing curl"
+pacman -S --noconfirm curl
 
 # formatting the disk
 info_print "Formatting disk"
