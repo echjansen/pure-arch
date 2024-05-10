@@ -261,8 +261,11 @@ if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
 fi
 
 ## installation ##
-intro_print " ".
-intro_print "Installing P U R E - A R C H :"
+clear
+intro_print "======================================"
+intro_print " Installing P U R E - A R C H ....... "
+intro_print "======================================"
+intro_print " "
 
 # Speed-up the pacman download
 info_print "Speed up pacman download"
@@ -556,16 +559,16 @@ account		required	pam_unix.so
 session		required	pam_unix.so
 EOF
 
+# Configuring the system.
+info_print "Configuring the system - chroot"
+
 # ZRAM configuration
-info_print "Configuring zram."
+info_print "... Configuring zram."
 bash -c 'cat > /mnt/etc/systemd/zram-generator.conf' <<-'EOF'
 [zram0]
 zram-fraction = 1
 max-zram-size = 8192
 EOF
-
-# Configuring the system.
-info_print "Configuring the system - chroot"
 
 info_print "... Configuring timezone."
 arch-chroot /mnt ln -sf /usr/share/zoneinfo/$(curl -s http://ip-api.com/line?fields=timezone) /etc/localtime &>/dev/null
@@ -596,43 +599,38 @@ info_print "... Setting root password."
 echo "root:$rootpass" | arch-chroot /mnt chpasswd
 
 # Giving wheel user sudo access.
-info_print "... Setting user sudo access"
+info_print "... Setting user sudo access."
 sed -i 's/# \(%wheel ALL=(ALL\(:ALL\|\)) ALL\)/\1/g' /mnt/etc/sudoers
 
 # Change audit logging group
-info_print "... Adding audit to logging group"
+info_print "... Adding audit to logging group."
 echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 
-info_print "... Installing GRUB on /boot."
-info_print "... Configuring GRUB config file."
-info_print "... Configuring snapshots."
+# info_print "... Installing GRUB on /boot."
+# info_print "... Configuring GRUB config file."
+# info_print "... Configuring snapshots."
 
 arch-chroot /mnt /bin/bash -e <<EOF
 
     # Generating a new initramfs.
-    chmod 600 /boot/initramfs-linux* &>/dev/null
-    mkinitcpio -P &>/dev/null
+    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ] ... Create ram disk for kernel modules.${RESET}"
+    chmod 600 /boot/initramfs-linux* # &>/dev/null
+    mkinitcpio -P # &>/dev/null
 
     # Installing GRUB.
-    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock &>/dev/null
+    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Installing GRUB on /boot.${RESET}"
+    grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock # &>/dev/null
 
     # Creating grub config file.
-    grub-mkconfig -o /boot/grub/grub.cfg &>/dev/null
-
-    # Adding user with sudo privilege
-    # if [ -n "$username" ]; then
-    #     useradd -m $username &>/dev/null
-    #     usermod -aG wheel $username &>/dev/null
-
-    #     groupadd -r audit &>/dev/null
-    #     gpasswd -a $username audit &>/dev/null
-    # fi
+    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Configuring GRUB config file.${RESET}"
+    grub-mkconfig -o /boot/grub/grub.cfg # &>/dev/null
 
     # Snapper configuration
+    echo -e "${BOLD}${BGREEN}[ ${BYELLOW}•${BGREEN} ]  ... Configuring snapshots.${RESET}"
     umount /.snapshots
     rm -r /.snapshots
     snapper --no-dbus -c root create-config /
-    btrfs subvolume delete /.snapshots &>/dev/null
+    btrfs subvolume delete /.snapshots # &>/dev/null
     mkdir /.snapshots
     mount -a
     chmod 750 /.snapshots    
