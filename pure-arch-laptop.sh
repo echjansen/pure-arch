@@ -427,7 +427,6 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "intel(amd)-ucode" microcode updates for the cpu. If you have an intel one use "intel-ucode"
 # "firewalld" firewall services
 # "apparmor" restrict applications access
-# "sbctl" secure boot manager
 # "fwupd" make updating firmware on Linux automatic
 # "mg" micro emacs editor
 # "chrony" secure NTP alternative
@@ -445,7 +444,7 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "chezmoi" dotfile management
 # "rbw" bitwarden password client
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony sbctl fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gnupg rbw xdg-user-dirs chezmoi mg &>/dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gnupg rbw xdg-user-dirs chezmoi mg &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
