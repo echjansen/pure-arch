@@ -9,7 +9,7 @@ setfont ter-v22b
 # Cosmetics (colours for text).
 BOLD='\e[1m'
 BRED='\e[91m'
-BBLUE='\e[34m'  
+BBLUE='\e[34m'
 BGREEN='\e[92m'
 BYELLOW='\e[93m'
 RESET='\e[0m'
@@ -41,8 +41,8 @@ kernel_selector () {
     info_print "2) Hardened:   A security-focused Linux kernel"
     info_print "3) Longterm:   Long-term support (LTS) Linux kernel"
     info_print "4) Zen Kernel: A Linux kernel optimized for desktop usage"
-    input_print "Please select the number of the corresponding kernel (e.g. 1): " 
-    read -r choice    
+    input_print "Please select the number of the corresponding kernel (e.g. 1): "
+    read -r choice
     case $choice in
         1 ) kernel=linux
             ;;
@@ -120,7 +120,7 @@ userpass_selector () {
         return 1
     fi
     echo
-    input_print "Please enter the password again (password not visible): " 
+    input_print "Please enter the password again (password not visible): "
     read -r -s userpass2
     echo
     if [[ "$userpass" != "$userpass2" ]]; then
@@ -141,7 +141,7 @@ rootpass_selector () {
         return 1
     fi
     echo
-    input_print "Please enter the password again (password not visible): " 
+    input_print "Please enter the password again (password not visible): "
     read -r -s rootpass2
     echo
     if [[ "$rootpass" != "$rootpass2" ]]; then
@@ -254,8 +254,8 @@ until locale_selector; do : ; done
 
 # Confirming the disk selection.
 info_print "Ready to start installation."
-input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?" 
-read -r response    
+input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?"
+read -r response
 response=${response,,}
 if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
     error_print "No selected. Quitting the installation."
@@ -422,7 +422,6 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "grub-btrfs" support for btrfgs in grub
 # "snapper" creating btrfs snapshots
 # "snap-pac" create snapshots automatically in pacman actions
-# "inotify-tools" support snapper
 # "grub-btrfs" adds btrfs support for the grub bootloader and enables the user to directly boot from snapshots
 # "inotify-tools" used by grub btrfsd deamon to automatically spot new snapshots and update grub entries
 # "timeshift" a GUI app to easily create,plan and restore snapshots using BTRFS capabilities
@@ -433,27 +432,23 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "mg" micro emacs editor
 # "chrony" secure NTP alternative
 # "networkmanager" to manage Internet connections both wired and wireless ( it also has an applet package network-manager-applet )
-# "pipewire pipewire-alsa pipewire-pulse pipewire-jack" for the new audio framework replacing pulse and jack. 
-# "wireplumber" the pipewire session manager.
 # "reflector" to manage mirrors for pacman
 # "openssh" to use ssh and manage keys
 # "man" for manual pages
 # "sudo" to run commands as other users
 # "zram-generator" configure zram swap devices
-# "git" version management
 # "gnupg" gnu pretty good privacy
-# "xdg-user-dirs" home folder subdirectories
 # "chezmoi" dotfile management
 # "rbw" bitwarden password client
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git gnupg rbw xdg-user-dirs chezmoi mg &>/dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd man git gnupg rbw chezmoi mg git wget curl&>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
 genfstab -U /mnt >> /mnt/etc/fstab
 sed -i 's#,subvolid=258,subvol=/@/.snapshots/1/snapshot,subvol=@/.snapshots/1/snapshot##g' /mnt/etc/fstab
 
-info_print "Setting hostname to $hostame" 
+info_print "Setting hostname to $hostame"
 echo "$hostname" > /mnt/etc/hostname
 
 # Setting hosts file.
@@ -470,7 +465,7 @@ sed -i "/^#$locale/s/^#//" /mnt/etc/locale.gen
 echo "LANG=$locale" > /mnt/etc/locale.conf
 
 # Setting up keyboard layout.
-info_print "Setting keyboard layout." 
+info_print "Setting keyboard layout."
 echo "KEYMAP=$kblayout" > /mnt/etc/vconsole.conf
 
 # Setting up pacman
@@ -611,7 +606,7 @@ echo "log_group = audit" >> /mnt/etc/audit/auditd.conf
 info_print "... Create ram disk for kernel modules."
 chmod 600 /mnt/boot/initramfs-linux*
 arch-chroot /mnt mkinitcpio -P &>/dev/null
-    
+
 info_print "... Installing GRUB on /boot."
 arch-chroot /mnt grub-install --target=x86_64-efi --efi-directory=/boot/efi --bootloader-id=GRUB --modules="normal test efi_gop efi_uga search echo linux all_video gfxmenu gfxterm_background gfxterm_menu gfxterm loadenv configfile gzio part_gpt cryptodisk luks gcry_rijndael gcry_sha256 btrfs" --disable-shim-lock &>/dev/null
 
@@ -629,7 +624,7 @@ arch-chroot /mnt /bin/bash -e <<EOF
     btrfs subvolume delete /.snapshots &>/dev/null
     mkdir /.snapshots
     mount -a
-    chmod 750 /.snapshots    
+    chmod 750 /.snapshots
 EOF
 
 info_print "Enabling services"
@@ -694,4 +689,3 @@ intro_print " "
 intro_print "Done, you may now wish to reboot (further changes can be done by chrooting into /mnt)."
 intro_print "======================================================================================"
 exit
- 
