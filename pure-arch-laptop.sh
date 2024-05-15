@@ -279,7 +279,7 @@ pacman -Sy &>/dev/null
 
 # Installing curl
 info_print "Installing curl"
-pacman -S --noconfirm curl
+pacman -S --noconfirm curl &>/dev/null
 
 # formatting the disk
 info_print "Formatting disk"
