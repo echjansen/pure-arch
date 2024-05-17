@@ -214,11 +214,10 @@ keyboard_selector () {
     esac
 }
 
-intro_print "======================================"
-intro_print "Welcome to P U R E - A R C H installer"
-intro_print "======================================"
+intro_print "===================================================="
+intro_print " Welcome to == P U R E - A R C H == server installer"
+intro_print "===================================================="
 intro_print " "
-
 ## user input ##
 
 # Choosing the target for the installation.
@@ -254,7 +253,8 @@ until locale_selector; do : ; done
 
 # Confirming the disk selection.
 info_print "Ready to start installation."
-input_print "This will delete the current partition table on $DISK. Do you agree [y/N]?"
+error_print "This will delete the current partition table on $DISK."
+input_print "Do you agree [y/N]?"
 read -r response
 response=${response,,}
 if [[ ! ("$response" =~ ^(yes|y)$) ]]; then
@@ -264,9 +264,9 @@ fi
 
 ## installation ##
 clear
-intro_print "======================================"
-intro_print " Installing P U R E - A R C H ....... "
-intro_print "======================================"
+intro_print "==========================================="
+intro_print " Installing == P U R E - A R C H == server "
+intro_print "==========================================="
 intro_print " "
 
 # Speed-up the pacman download
