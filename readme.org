@@ -17,8 +17,8 @@ The scripts are inspired by Tommy Trans Arch Setup Script.
 9. Secure Boot script (after Arch installation)
 
 ** How to install?
-1. Download an Arch Linux ISO from [here](https://archlinux.org/download/)
-2. Flash the ISO onto an [USB Flash Drive](https://wiki.archlinux.org/index.php/USB_flash_installation_medium).
+1. Download an Arch Linux ISO from [[https://archlinux.org/download/][the Arch Linux download site]].
+2. Flash the ISO onto an [[https://wiki.archlinux.org/index.php/USB_flash_installation_medium][USB Flash Drive]].
 3. Boot the live environment.
 4. Connect to the internet.
 5. curl -sL https://tinyurl.com/pure-arch-laptop > pure-arch-laptop.sh
