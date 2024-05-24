@@ -21,10 +21,12 @@ The scripts are inspired by Tommy Trans Arch Setup Script.
 2. Flash the ISO onto an [USB Flash Drive](https://wiki.archlinux.org/index.php/USB_flash_installation_medium).
 3. Boot the live environment.
 4. Connect to the internet.
-5. `git clone https://github.com/echjansen/pure-arch/`
-6. `cd pure-arch`
-7. `./pure-arch-server.sh`, or
-8. `./pure-arch-laptopm.sh`
+5. curl -sL https://tinyurl.com/pure-arch-laptop > pure-arch-laptop.sh
+6. chmod +x pure-arch-laptop.sh
+7. ./pure-arch-laptop.sh
+8. For pure-arch-server use the same procedure with htpps://tinyurl.com/pure-arch-server
+   
+If tinyurl fials use: curl -sL https://raw.githubusercontent.com/echjansen/pure-arch/main/pure-arch-laptop.sh
 
 [[https://github.com/echjansen/pure-arch/blob/main/images/pure-arch-questions.png?raw=true]]
 
