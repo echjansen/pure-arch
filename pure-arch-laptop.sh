@@ -445,10 +445,10 @@ mount -o nodev,nosuid,noexec $ESP /mnt/boot/efi
 # "wget" download tool
 # "gnupg" gnu pretty good privacy
 # "xdg-user-dirs" home folder subdirectories
-# "chezmoi" dotfile management
+# "stow" dotfile management
 # "rbw" bitwarden password client
 info_print "Installing the base system, please wait ..."
-pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git curl wget gnupg rbw xdg-user-dirs chezmoi mg &>/dev/null
+pacstrap /mnt base ${kernel} ${microcode} linux-firmware base-devel btrfs-progs grub grub-btrfs snapper snap-pac inotify-tools efibootmgr sudo networkmanager apparmor firewalld zram-generator reflector openssh chrony fwupd pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber man git curl wget gnupg xdg-user-dirs stow mg &>/dev/null
 
 # Generating /etc/fstab.
 info_print "Generating a new fstab."
@@ -683,7 +683,7 @@ systemctl enable snapper-cleanup.timer --root=/mnt &>/dev/null
 systemctl enable grub-btrfsd --root=/mnt &>/dev/null
 
 # Setting umask to 077.
-info_print "umask to 077"
+info_print "... umask to 077"
 sed -i 's/022/077/g' /mnt/etc/profile
 echo "" >> /mnt/etc/bash.bashrc
 echo "umask 077" >> /mnt/etc/bash.bashrc
