@@ -1,9 +1,11 @@
 * === P U R E - A R C H ===
 This is a setup script to install a lean and secure version of the Arch Linux operating system either on either a server or laptop.
-The total installation time is around 5 minutes, after anwering the basic question of installation disk, user, paswords, keyboard and locale.
-Each install script is is a single file and it should be rather straight forward to ammend to your personal needs.
+The total installation time is around 5 minutes, after answering the basic question of installation disk, user, passwords, keyboard and locale.
+Each install script  is a single file and it should be rather straight forward to amend to your personal needs.
 
 The scripts are inspired by Tommy Trans Arch Setup Script.
+
+*Note: - these scripts are functional for Arch Linux until release 2024-05.*
 
 ** Features
 1. Encrypted /boot and /root with LUKS1
