@@ -87,7 +87,7 @@ def select_drive() -> str:
         while True:
             try:
                 selection = prompt.ask(
-                    '[bold yellow]Enter the index of the drive to select[/]',
+                    '[yellow]Enter the index of the drive to select[/]',
                     default='1',
                     show_default=True
                 )
@@ -122,12 +122,12 @@ def get_password(user_prompt: str, min_length: int = 8) -> str:
     '''
 
     while True:
-        password = prompt.ask(f'[bold yellow]Enter the password for {user_prompt} (minimum {min_length} characters)[/]', password=True)
+        password = prompt.ask(f'[yellow]Enter the password for {user_prompt} (minimum {min_length} characters)[/]', password=True)
         if len(password) < min_length:
             console.print(f'Password must be at least {min_length} characters long. Please try again.', style='error')
             continue
 
-        password_confirmation = prompt.ask(f'[bold yellow]Confirm the password for {user_prompt}[/]', password=True)
+        password_confirmation = prompt.ask(f'[yellow]Confirm the password for {user_prompt}[/]', password=True)
 
         if password == password_confirmation:
             return password
@@ -143,7 +143,7 @@ def get_username() -> str:
         str: The entered username.
     '''
     while True:
-        username = prompt.ask('[bold yellow]Enter username[/]')
+        username = prompt.ask('[yellow]Enter username[/]')
 
         if username.strip():
             return username.strip()
@@ -182,7 +182,7 @@ def select_from_directory_with_search(directory: str, item_type: str, remove_ext
             return [item for item in items if search_term in item.lower()]
 
         while True:
-            search_term = prompt.ask(f"[bold yellow]Enter search term for {item_type} (or press Enter to list all):[/]")
+            search_term = prompt.ask(f"[yellow]Enter search term for {item_type} (or press Enter to list all)[/]")
 
             filtered_items = filter_items(all_items, search_term) if search_term else all_items
 
@@ -194,14 +194,14 @@ def select_from_directory_with_search(directory: str, item_type: str, remove_ext
             table.add_column("Index", justify="right", style="cyan", no_wrap=True)
             table.add_column(item_type.capitalize(), style="magenta")
 
-            display_items = [os.path.splitext(item)[0] for item in filter_items] if remove_extension else filtered_items
+            display_items = [os.path.splitext(item)[0] for item in filtered_items] if remove_extension else filtered_items
 
             for i, item in enumerate(display_items):
                 table.add_row(str(i + 1), item)
 
             console.print(table)
 
-            selection = prompt.ask(f"[bold yellow]Enter the index of the {item_type} to select (or press Enter to search again):[/]", default="", show_default=False)
+            selection = prompt.ask(f"[yellow]Enter the index of the {item_type} to select (or press Enter to search again):[/]", default="", show_default=False)
 
             if not selection:
                 continue  # Go back to search
@@ -209,7 +209,7 @@ def select_from_directory_with_search(directory: str, item_type: str, remove_ext
             try:
                 index = int(selection) - 1
                 if 0 <= index < len(filtered_items):
-                    return filtered_items[index]
+                    return display_items[index]
                 else:
                     console.print("[bold red]Invalid selection. Please enter a valid index.[/]")
             except ValueError:
@@ -228,7 +228,7 @@ def select_locale() -> str:
         str: The selected locale name (e.g., "en_US").
              Returns an empty string if no locale is selected or an error occurs.
     """
-    return select_from_directory_with_search("/usr/share/i18n/locales", "Language")
+    return select_from_directory_with_search("/usr/share/i18n/locales", "Language (example: en_US)")
 
 
 def select_charmap() -> str:
@@ -239,7 +239,7 @@ def select_charmap() -> str:
         str: The selected charmap name (e.g., "UTF-8").
              Returns an empty string if no charmap is selected or an error occurs.
     """
-    return select_from_directory_with_search("/usr/share/i18n/charmaps", "Character Map", remove_extension=True)
+    return select_from_directory_with_search("/usr/share/i18n/charmaps", "Character Map (example: UTF-8)", remove_extension=True)
 
 
 if __name__ == '__main__':
@@ -271,10 +271,10 @@ if __name__ == '__main__':
     else:
         console.print('No locale selected.', style='critical')
 
-#    if charmap:
+    if charmap:
         console.print(f'Selected charmap: [yellow]{charmap}[/]', style='success')
-#    else:
-#        console.print('No charmap selected.', style='critical')
+    else:
+        console.print('No charmap selected.', style='critical')
 
     if Prompt.ask('Are these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
