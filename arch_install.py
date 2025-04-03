@@ -10,6 +10,7 @@
 #----------------------------------------------------------------------------------------------------------------------
 
 import os
+import logging
 import subprocess
 from typing import List
 from rich.console import Console
@@ -19,6 +20,7 @@ from rich.rule import Rule
 from rich.table import Table
 
 
+# 'rich' objects
 theme = Theme({
     'info':     'yellow',
     'warning':  'bold yellow',
@@ -29,9 +31,47 @@ theme = Theme({
 })
 
 console = Console(theme=theme)
-prompt = Prompt()
-# table_devices = table.Table(title='Available Drives')
-# table_locale = table.Table(title="Matching Locales")
+prompt  = Prompt()
+log     = logging.getLogger("rich")
+
+# Debugging variables
+DEBUG = True                    # If True, report on command during execution
+STEP = False                    # If true, step one command at the time
+
+# Global Constants
+PART_NAME_1 = "README"
+PART_NAME_2 = "EFI"
+PART_NAME_3 = "LINUX_ENCRYPTED"
+PART_NAME_4 = "STORAGE_ENCRYPTED"
+PART_FORMAT_4 = "BTRFS"
+LINUX_ENV = "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 KEYMAP=us DEBIAN_FRONTEND=noninteractive TERM=xterm-color"
+LINUX_PKGS = "linux-image-amd64 firmware-linux firmware-iwlwifi zstd grub-efi cryptsetup cryptsetup-initramfs btrfs-progs fdisk gdisk sudo network-manager xserver-xorg xinit lightdm xfce4 dbus-x11 thunar xfce4-terminal firefox-esr keepassxc network-manager-gnome mg"
+
+# Global Variables
+DRIVE = None                    # The device that will be made into a backup device
+DRIVE_PASSWORD = None           # Encryption password for partitions
+UUID_PART1 = None               # UUID of partition 1
+UUID_PART2 = None               # UUID of partition 2
+UUID_PART3 = None               # UUID of partition 3
+UUID_PART4 = None               # UUID of partition 4
+USER_NAME = None                # User name for backup devices (no root)
+USER_PASSWORD = None            # User password for backup device
+LUKS_PASSWORD = None            # Luks password for drive(s)
+SYSTEM_LOCALE = None            # System locale ('en_US')
+SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
+
+# Deleteme
+DRIVE = '/dev/sdb'              # The device that will be made into a backup device
+DRIVE_PASSWORD = '123'          # Encryption password for partitions
+UUID_PART1 = None               # UUID of partition 1
+UUID_PART2 = None               # UUID of partition 2
+UUID_PART3 = None               # UUID of partition 3
+UUID_PART4 = None               # UUID of partition 4
+USER_NAME = 'echjansen'         # User name for backup devices (no root)
+USER_PASSWORD = '123'           # User password for backup device
+LUKS_PASSWORD = '123'           # Luks password for drive(s)
+SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
+SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
 
 #----------------------------------------------------------------------------------------------------------------------
 # Supporting functions
@@ -108,7 +148,7 @@ def select_drive() -> str:
         console.print(f'An unexpected error occurred: {e}', style='critical')
         return ''
 
-def get_password(user_prompt: str, min_length: int = 8) -> str:
+def select_password(user_prompt: str, min_length: int = 8) -> str:
     '''
     Prompts the user to enter a password twice for confirmation, hiding the input
     on the console. It retries until the two entries match and meet the minimum length requirement.
@@ -134,7 +174,7 @@ def get_password(user_prompt: str, min_length: int = 8) -> str:
         else:
             console.print('Passwords do not match. Please try again.', style='error')
 
-def get_username() -> str:
+def select_username() -> str:
     '''
     Prompts the user to enter a username. The username cannot be empty.
     it continues prompting until a non-empty username is provided.
@@ -242,39 +282,121 @@ def select_charmap() -> str:
     return select_from_directory_with_search("/usr/share/i18n/charmaps", "Character Map (example: UTF-8)", remove_extension=True)
 
 
+def run_bash(description :str, command :str, input=None, output_var=None,  **kwargs):
+    '''
+    Execute a bash command with optional input from stdin and return the return code, output and error
+    '''
+
+    # Step when debugging
+    if STEP == True:
+        if prompt.ask(f"{description}", choices=['y', 'n']) == 'n': exit()
+
+    # Ensure arguments are well formatted
+    if not isinstance(description, str):
+        log.error("The Description must be a string")
+        raise ValueError("The Description must be a string")
+
+    if not isinstance(command, str):
+        log.error("The command must be a string")
+        raise ValueError("The command must be a string")
+
+    if input is not None and not isinstance(input, str):
+        log.error("The Input must be s string")
+        raise ValueError("The Input must be a string")
+
+    if output_var is not None and not isinstance(output_var, str):
+        log.error("The Output name must be s string")
+        raise ValueError("The Output name must be a string")
+
+    # Format "command" with potential values of global variables
+    try:
+        global_vars = {key: value for key, value in globals().items() if not key.startswith('__')}
+        command_formatted = command.format(**global_vars)
+    except KeyError as e:
+        log.error(f'Missing variable for command: {e}')
+        raise ValueError(f'Missing variable for command: {e}')
+
+    # Format "description" with potential values of global variables
+    try:
+        description_formatted = description.format(**global_vars)
+    except KeyError as e:
+        log.error(f'Missing variable for description: {e}')
+        raise ValueError(f'Missing variable for description: {e}')
+
+    # Format input with potential values of global variables
+    try:
+        input_formatted = None
+        if input is not None:
+            input_formatted = input.format(**global_vars)
+    except KeyError as e:
+        log.error(f'Missing variable for input: {e}')
+        raise ValueError(f'Missing variable for input: {e}')
+
+    # Report running of the command
+    logging.info(f'{description_formatted}')
+    if DEBUG: log.debug(f'{command_formatted}')
+    #if input: log.debug(f'Input data: {input_formatted}')
+
+    try:
+        # Run the bash command
+        result = subprocess.run(command_formatted, shell=True, check=True, stdout=subprocess.PIPE,
+                                input=input_formatted, stderr=subprocess.PIPE, text=True)
+
+        # Set return variable if specified
+        if output_var in globals():
+            globals()[output_var] = result.stdout.strip()
+            if DEBUG: log.debug(f'Variable: {output_var} - value: {globals()[output_var]}')
+
+        # Standard function returns
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except subprocess.CalledProcessError as e:
+        log.error(f'Command: {command_formatted}')
+        log.error(f'Return code: {e.returncode}')
+        log.error(f'Error output: {e.stderr.strip()}')
+        if prompt.ask('Exit?', choices=['y', 'n']) == 'y':
+            exit()
+        return e.returncode, e.output.strip(), e.stderr.strip()
+    except Exception as e:
+        log.exception('An unexpected error occurred')
+        return -1, "", str(e)
+
 if __name__ == '__main__':
 
     console.clear()
 
     #-- User input ------------------------------------------------------------
-    console.print(Rule("User selections for installation"))
+    console.print(Rule("User selections for installation"), style='success')
 
     # Get installation variables
-    drive = select_drive()
-    username = get_username()
-    userpass = get_password('Luks', min_length=3)
-    locale = select_locale()
-    charmap = select_charmap()
+    if not DRIVE: DRIVE = select_drive()
+    if not USER_NAME: USER_NAME = select_username()
+    if not USER_PASSWORD: USER_PASSWORD = select_password('User', min_length=3)
+    if not LUKS_PASSWORD: LUKS_PASSWORD = select_password('Luks', min_length=3)
+    if not SYSTEM_LOCALE: SYSTEM_LOCALE = select_locale()
+    if not SYSTEM_CHARMAP: SYSTEM_CHARMAP = select_charmap()
 
-    if drive:
-        console.print(f'Selected drive: [yellow]{drive}[/]', style='success')
+    #-- User validation ------------------------------------------------------------
+    console.print(Rule("Installation selections"), style='success')
+
+    if DRIVE:
+        console.print(f'Selected drive:     [green]{DRIVE}[/]', style='info')
     else:
         console.print('No drive selected.', style='critical')
 
-    if username:
-        console.print(f'Selected username: [yellow]{username}[/]', style='success')
+    if USER_NAME:
+        console.print(f'Selected username:  [green]{USER_NAME}[/]', style='info')
     else:
         console.print('No username selected.', style='critical')
 
-    if locale:
-        console.print(f'Selected locale: [yellow]{locale}[/]', style='success')
+    if SYSTEM_LOCALE:
+        console.print(f'Selected locale:    [green]{SYSTEM_LOCALE}[/]', style='info')
     else:
         console.print('No locale selected.', style='critical')
 
-    if charmap:
-        console.print(f'Selected charmap: [yellow]{charmap}[/]', style='success')
+    if SYSTEM_CHARMAP:
+        console.print(f'Selected charmap:   [green]{SYSTEM_CHARMAP}[/]', style='info')
     else:
         console.print('No charmap selected.', style='critical')
 
-    if Prompt.ask('Are these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
+    if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
