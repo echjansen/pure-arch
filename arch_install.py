@@ -3,7 +3,7 @@
 # - Use python script to install Arch Linux
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - [ ]
+# - [ ] Selecting 'USER_COUNTRY'
 # - [ ]
 # - [ ]
 # - [ ]
@@ -18,7 +18,7 @@ from rich.theme import Theme
 from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
-
+from rich.logging import RichHandler
 
 # 'rich' objects
 theme = Theme({
@@ -30,13 +30,32 @@ theme = Theme({
     'debug':    'blue',
 })
 
+class CustomFormatter(logging.Formatter):
+    COLORS = {
+        'INFO':      'yellow',
+        'WARNING':   'bold yellow',
+        'success':   'green',
+        'ERROR':     'bold reverse red',
+        'DEBUG':     'blue',
+        'CRITICAL':  'red',
+        }
+
+    def format(self, record):
+        log_color = self.COLORS.get(record.levelname, 'white')
+        record.msg = f'[{log_color}]{record.msg}[/{log_color}]'
+        return super().format(record)
+
 console = Console(theme=theme)
-prompt  = Prompt()
-log     = logging.getLogger("rich")
+prompt = Prompt()
+handler = RichHandler(rich_tracebacks=True, markup=True)
+handler.setFormatter(CustomFormatter())
+log = logging.getLogger("rich")
+log.addHandler(handler)
+log.setLevel(logging.DEBUG)
 
 # Debugging variables
-DEBUG = True                    # If True, report on command during execution
-STEP = False                    # If true, step one command at the time
+DEBUG = True                   # If True, report on command during execution
+STEP = True                    # If true, step one command at the time
 
 # Global Constants
 PART_NAME_1 = "README"
@@ -59,6 +78,7 @@ USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
 SYSTEM_LOCALE = None            # System locale ('en_US')
 SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
+SYSTEM_COUNTRY = None           # System country, used for repository downloads
 
 # Deleteme
 DRIVE = '/dev/sdb'              # The device that will be made into a backup device
@@ -72,6 +92,7 @@ USER_PASSWORD = '123'           # User password for backup device
 LUKS_PASSWORD = '123'           # Luks password for drive(s)
 SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
 SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
+SYSTEM_COUNTRY  = 'Australia'   # System country, used for repository downloads
 
 #----------------------------------------------------------------------------------------------------------------------
 # Supporting functions
@@ -335,7 +356,6 @@ def run_bash(description :str, command :str, input=None, output_var=None,  **kwa
     # Report running of the command
     logging.info(f'{description_formatted}')
     if DEBUG: log.debug(f'{command_formatted}')
-    #if input: log.debug(f'Input data: {input_formatted}')
 
     try:
         # Run the bash command
@@ -349,6 +369,7 @@ def run_bash(description :str, command :str, input=None, output_var=None,  **kwa
 
         # Standard function returns
         return result.returncode, result.stdout.strip(), result.stderr.strip()
+
     except subprocess.CalledProcessError as e:
         log.error(f'Command: {command_formatted}')
         log.error(f'Return code: {e.returncode}')
@@ -356,6 +377,7 @@ def run_bash(description :str, command :str, input=None, output_var=None,  **kwa
         if prompt.ask('Exit?', choices=['y', 'n']) == 'y':
             exit()
         return e.returncode, e.output.strip(), e.stderr.strip()
+
     except Exception as e:
         log.exception('An unexpected error occurred')
         return -1, "", str(e)
@@ -374,8 +396,9 @@ if __name__ == '__main__':
     if not LUKS_PASSWORD: LUKS_PASSWORD = select_password('Luks', min_length=3)
     if not SYSTEM_LOCALE: SYSTEM_LOCALE = select_locale()
     if not SYSTEM_CHARMAP: SYSTEM_CHARMAP = select_charmap()
+    if not SYSTEM_COUNTRY: pass
 
-    #-- User validation ------------------------------------------------------------
+    #-- User validation --------------------------------------------------------
     console.print(Rule("Installation selections"), style='success')
 
     if DRIVE:
@@ -398,5 +421,14 @@ if __name__ == '__main__':
     else:
         console.print('No charmap selected.', style='critical')
 
+    if SYSTEM_COUNTRY:
+        console.print(f'Selected country:   [green]{SYSTEM_COUNTRY}[/]', style='info')
+    else:
+        console.print('No country selected.', style='critical')
+
     if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
+
+    #-- System Preparation and Checks  -----------------------------------------
+    run_bash('Some senseless commands', 'ls -all')
+    #run_bash('Get local repositories', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
