@@ -61,6 +61,7 @@ STEP = False                   # If true, step one command at the time
 # Global Constants
 PART_1_NAME = "Primary"
 PART_2_NAME = "ESP"
+BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
 
 LINUX_ENV = "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 KEYMAP=us DEBIAN_FRONTEND=noninteractive TERM=xterm-color"
 LINUX_PKGS = "linux-image-amd64 firmware-linux firmware-iwlwifi zstd grub-efi cryptsetup cryptsetup-initramfs btrfs-progs fdisk gdisk sudo network-manager xserver-xorg xinit lightdm xfce4 dbus-x11 thunar xfce4-terminal firefox-esr keepassxc network-manager-gnome mg"
@@ -68,8 +69,8 @@ LINUX_PKGS = "linux-image-amd64 firmware-linux firmware-iwlwifi zstd grub-efi cr
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
 DRIVE_PASSWORD = None           # Encryption password for partitions
-PART_1_UUID = None               # UUID of partition 1
-PART_2_UUID = None               # UUID of partition 2
+PART_1_UUID = None              # UUID of partition 1
+PART_2_UUID = None              # UUID of partition 2
 USER_NAME = None                # User name for backup devices (no root)
 USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
@@ -697,5 +698,32 @@ if __name__ == '__main__':
     run_bash('Partition 1 - Create subvolume @var-tmp',            'btrfs subvolume create /mnt/@var-lib')
     run_bash('Partition 1 - Umount {PART_1_NAME}', 'umount /mnt')
 
+    # Copy-on-Write is no good for big files that are written multiple times.
+    # This includes: logs, containers, virtual machines, databases, etc.
+    # They usually lie in /var, therefore CoW will be disabled for everything in /var
+    # Note that currently btrfs does not support the nodatacow mount option.
+    run_bash('Partition 1 - Mount @',                  'mount         -o subvol=@,                    {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt')
+    run_bash('Partition 1 - Mount @home',              'mount --mkdir -o subvol=@home,                {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home')
+    run_bash('Partition 1 - Mount @swap',              'mount --mkdir -o subvol=@swap,                {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.swap')
+    run_bash('Partition 1 - Mount @snaphots',          'mount --mkdir -o subvol=@snapshots,           {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.snapshots')
+    run_bash('Partition 1 - Mount @home-snapshots',    'mount --mkdir -o subvol=@home-snapshots,      {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home/.snaphots')
+    run_bash('Partition 1 - Mount @var',               'mount --mkdir -o subvol=@var,                 {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var')
+    run_bash('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,             {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/log')
+    run_bash('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,             {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/tmp')
+    run_bash('Partition 1 - Mount @libvirt',           'mount --mkdir -o subvol=@libvirt,             {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/libvirt')
+    run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,              {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/docker')
+    run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-packgs, {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
+    run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
+
+    run_bash('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 {DRIVE}2 /mnt/efi')
+
+    # Create swap
+
+# btrfs filesystem mkswapfile /mnt/.swap/swapfile
+# mkswap /mnt/.swap/swapfile # according to btrfs doc it shouldn't be needed, it's a bug
+# swapon /mnt/.swap/swapfile # we use the swap so that genfstab detects it
+
+
     # -- Cleaning up -----------------------------------------------------------
     run_bash('Partition 1 - Close {PART_1_UUID}', 'cryptsetup luksClose {PART_1_UUID}')
+    run_bash('Partition X - Umount', 'umount --recursive /mnt')
