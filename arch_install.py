@@ -3,8 +3,8 @@
 # - Use python script to install Arch Linux
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - [ ] Selecting 'USER_COUNTRY'
-# - [ ]
+# - [X] Selecting 'USER_COUNTRY'
+# - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
 # - [ ]
 # - [ ]
 #----------------------------------------------------------------------------------------------------------------------
@@ -56,24 +56,20 @@ log.setLevel(logging.DEBUG)
 
 # Debugging variables
 DEBUG = True                   # If True, report on command during execution
-STEP = True                    # If true, step one command at the time
+STEP = False                   # If true, step one command at the time
 
 # Global Constants
-PART_NAME_1 = "README"
-PART_NAME_2 = "EFI"
-PART_NAME_3 = "LINUX_ENCRYPTED"
-PART_NAME_4 = "STORAGE_ENCRYPTED"
-PART_FORMAT_4 = "BTRFS"
+PART_1_NAME = "Primary"
+PART_2_NAME = "ESP"
+
 LINUX_ENV = "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 KEYMAP=us DEBIAN_FRONTEND=noninteractive TERM=xterm-color"
 LINUX_PKGS = "linux-image-amd64 firmware-linux firmware-iwlwifi zstd grub-efi cryptsetup cryptsetup-initramfs btrfs-progs fdisk gdisk sudo network-manager xserver-xorg xinit lightdm xfce4 dbus-x11 thunar xfce4-terminal firefox-esr keepassxc network-manager-gnome mg"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
 DRIVE_PASSWORD = None           # Encryption password for partitions
-UUID_PART1 = None               # UUID of partition 1
-UUID_PART2 = None               # UUID of partition 2
-UUID_PART3 = None               # UUID of partition 3
-UUID_PART4 = None               # UUID of partition 4
+PART_1_UUID = None               # UUID of partition 1
+PART_2_UUID = None               # UUID of partition 2
 USER_NAME = None                # User name for backup devices (no root)
 USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
@@ -86,10 +82,6 @@ SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
 # Deleteme
 DRIVE = '/dev/sdb'              # The device that will be made into a backup device
 DRIVE_PASSWORD = '123'          # Encryption password for partitions
-UUID_PART1 = None               # UUID of partition 1
-UUID_PART2 = None               # UUID of partition 2
-UUID_PART3 = None               # UUID of partition 3
-UUID_PART4 = None               # UUID of partition 4
 USER_NAME = 'echjansen'         # User name for backup devices (no root)
 USER_PASSWORD = '123'           # User password for backup device
 LUKS_PASSWORD = '123'           # Luks password for drive(s)
@@ -614,6 +606,7 @@ if __name__ == '__main__':
     check_sudo()
 
     #-- User input ------------------------------------------------------------
+
     console.print(Rule("User selections for installation"), style='success')
 
     # Get installation variables
@@ -627,6 +620,7 @@ if __name__ == '__main__':
     if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
 
     #-- User validation --------------------------------------------------------
+
     console.print(Rule("Installation selections"), style='success')
 
     if DRIVE:
@@ -665,3 +659,43 @@ if __name__ == '__main__':
 
     #-- System Preparation and Checks  -----------------------------------------
     run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
+
+    #-- Disk Partitioning, Formatting and Mounting  ---------------------------
+
+    console.print(Rule("Partitioning, Encrypting and Formatting"), style='success')
+
+    # Write random data to the whole disk
+    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd=1M if=/dev/urandom of={DRIVE} || true')
+    if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DISK} | xargs -n1 wipefs --all')
+
+    # Create partition table and name partitions
+    run_bash('Partitioning - Create partition table', 'sgdisk --clear {DRIVE} --new 1::-551MiB --new 2::0 --typecode 2:ef00 {DRIVE}')
+    run_bash('Partitioning - Name the partitions', 'sgdisk {DRIVE} --change-name=1:{PART_1_NAME} --change-name=2:{PART_2_NAME}')
+
+    # Format partitions
+    # -- partition 2 - Root  ---------------------------------------------------
+    run_bash('Partition 2 - Formatting {PART_2_NAME}','mkfs.vfat -n {PART_2_NAME} -F 32 {DRIVE}2')
+    run_bash('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
+
+    # -- partition 1 ----------------------------------------------------------
+    run_bash('Partition 1 - Encrypting {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_NAME} {DRIVE}1',input="{LUKS_PASSWORD}")
+    run_bash('Partition 1 - Get UUID for {PART_1_NAME}', 'cryptsetup luksUUID {DRIVE}1', output_var='PART_1_UUID')
+    run_bash('Partition 1 - Open {PART_1_NAME}', 'cryptsetup luksOpen {DRIVE}1 {PART_1_UUID}' ,input="{LUKS_PASSWORD}")
+
+    run_bash('Partition 1 - Set file system {PART_1_NAME} to BTRFS', 'mkfs.btrfs --label {PART_1_NAME} /dev/mapper/{PART_1_UUID}')
+    run_bash('Partition 1 - Mount {PART_1_NAME}', 'mount /dev/mapper/{PART_1_UUID} /mnt')
+    run_bash('Partition 1 - Create subvolume @',                   'btrfs subvolume create /mnt/@')
+    run_bash('Partition 1 - Create subvolume @home',               'btrfs subvolume create /mnt/@home')
+    run_bash('Partition 1 - Create subvolume @swap',               'btrfs subvolume create /mnt/@swap')
+    run_bash('Partition 1 - Create subvolume @snapshots',          'btrfs subvolume create /mnt/@snapshots')
+    run_bash('Partition 1 - Create subvolume @home-snapshots',     'btrfs subvolume create /mnt/@home-snapshots')
+    run_bash('Partition 1 - Create subvolume @libvirt',            'btrfs subvolume create /mnt/@libvirt')
+    run_bash('Partition 1 - Create subvolume @docker',             'btrfs subvolume create /mnt/@docker')
+    run_bash('Partition 1 - Create subvolume @cache-pacman-pkgs',  'btrfs subvolume create /mnt/@cache-pacman-pkgs')
+    run_bash('Partition 1 - Create subvolume @var',                'btrfs subvolume create /mnt/@var')
+    run_bash('Partition 1 - Create subvolume @var-log',            'btrfs subvolume create /mnt/@var-log')
+    run_bash('Partition 1 - Create subvolume @var-tmp',            'btrfs subvolume create /mnt/@var-lib')
+    run_bash('Partition 1 - Umount {PART_1_NAME}', 'umount /mnt')
+
+    # -- Cleaning up -----------------------------------------------------------
+    run_bash('Partition 1 - Close {PART_1_UUID}', 'cryptsetup luksClose {PART_1_UUID}')
