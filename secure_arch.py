@@ -10,6 +10,7 @@
 #----------------------------------------------------------------------------------------------------------------------
 
 import os
+import shutil
 import logging
 import subprocess
 from typing import List
@@ -19,7 +20,8 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
-from typing import List, Tuple
+from rich.progress import Progress
+from typing import Union, Tuple
 
 # 'rich' objects
 theme = Theme({
@@ -79,6 +81,11 @@ SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
 SYSTEM_COUNTRY = None           # System country ('Australia')
 SYSTEM_COUNTRY_CODE = None      # System country code ('au')
 SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
+SYSTEM_CPU = None               # System CPU brand (Intel, AMD, etc)
+SYSTEM_GPU = None               # System GPU brand (Intel, AMD, NVIDIA, etc)
+SYSTEM_VIRT = None              # System virtualizer (if any) (oracle, vmware, docker, etc)
+SYSTEM_PKGS = None              # System packages to install
+SYSTEM_CMD = None               # System commands lines
 
 # Deleteme
 DRIVE = '/dev/sdb'              # The device that will be made into a backup device
@@ -95,6 +102,288 @@ SYSTEM_TIMEZONE  = 'Australia\Melbourne'   # System timezone
 #----------------------------------------------------------------------------------------------------------------------
 # Supporting functions
 #----------------------------------------------------------------------------------------------------------------------
+def get_cpu_brand() -> str:
+    """
+    Uses the 'lscpu' command to determine the CPU brand (Intel, AMD, etc.).
+
+    Returns:
+        str: The CPU brand name.
+             Returns "Unknown" if the brand cannot be determined or an error occurs.
+    """
+    try:
+        # Execute lscpu
+        result = subprocess.run(
+            ['lscpu'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        # Search for the "CPU vendor" line
+        vendor_id = None
+        model_name = None
+        for line in output.splitlines():
+            if "Vendor ID:" in line:
+                vendor_id = line.split(":", 1)[1].strip()
+            if "Model name:" in line:
+                model_name = line.split(":", 1)[1].strip()
+
+        if vendor_id:
+            if vendor_id == "GenuineIntel":
+                return "Intel"
+            elif vendor_id == "AuthenticAMD":
+                return "AMD"
+            else:
+                if model_name:
+                   return model_name # Returning the "Model name"
+                else:
+                   return vendor_id  # Return the raw "CPU vendor" string if known brands aren't matched.
+        else:
+            console.print("Could not determine CPU brand from lscpu output.", style='error')
+            return "Unknown"
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing lscpu: {e}", style='critical')
+        return "Unknown"
+    except FileNotFoundError:
+        console.print("Error: lscpu command not found. Please ensure lscpu is installed.", style='critical')
+        return "Unknown"
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return "Unknown"
+
+def get_graphics_card_brand() -> str:
+    """
+    Uses the 'lspci' command to determine the graphics card brand (Intel, NVIDIA, AMD, etc.).
+
+    Returns:
+        str: The graphics card brand name.
+             Returns "Unknown" if the brand cannot be determined or an error occurs.
+    """
+
+    try:
+        # Execute lspci to get VGA compatible controller information
+        result = subprocess.run(
+            ['lspci', '-vnn', '-d', '::0300'],  # Filter for VGA compatible controllers
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        # Parse the output to find the graphics card brand
+        for line in output.splitlines():
+            if "VGA compatible controller" in line:
+                # Extract the brand name from the line
+                brand = line.split("VGA compatible controller")[1].strip()
+
+                # Normalize the brand (remove extra info, use common names)
+                if "Intel" in brand:
+                    return "Intel"
+                elif "NVIDIA" in brand:
+                    return "NVIDIA"
+                elif "AMD" in brand or "ATI" in brand:
+                    return "AMD"  # Using AMD as the standard name
+                elif "VMware" in brand :
+                    return "VMWare"  # VMWare Virtualisation
+                elif "Oracle" in brand :
+                    return "VirtualBox"  # VirtualBox Virtualisation
+                else:
+                    return brand  # Return the raw brand if known brands aren't matched.
+
+        console.print("Could not determine graphics card brand from lspci output.", style='error')
+        return "Unknown"
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing lspci: {e}", style='critical')
+        return "Unknown"
+    except FileNotFoundError:
+        console.print("Error: lspci command not found. Please ensure lspci is installed.", style='critical')
+        return "Unknown"
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return "Unknown"
+
+def get_virtualizer() -> str:
+    """
+    Uses the 'systemd-detect-virt' command to determine the current virtualizer.
+
+    Returns:
+        str: The name of the virtualizer (e.g., "vmware", "kvm", "docker", "lxc").
+             Returns "none" if running on bare metal or the virtualizer cannot be determined.
+             Returns "Unknown" if an error occurs.
+    """
+
+    try:
+        # Execute systemd-detect-virt
+        result = subprocess.run(
+            ['systemd-detect-virt'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        if output:
+            return output
+        else:
+            return "metal"  # Running on bare metal
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing systemd-detect-virt: {e}", style='critical')
+        return "Unknown"
+    except FileNotFoundError:
+        console.print("Error: systemd-detect-virt command not found. Please ensure systemd is installed.", style='critical')
+        return "Unknown"
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return "Unknown"
+
+
+def get_packages_from_file(filepath: str) -> List[str]:
+    """
+    Reads a file containing a list of package names (one per line),
+    removes comments, and returns a list of clean package names.
+
+    Comments start with '#' and can be the entire line or behind the package name.
+
+    To use with for instance pacstrap use ' '.join(packages)
+
+    Args:
+        filepath: The path to the file containing the package list.
+
+    Returns:
+        A list of package names (without comments).
+    """
+    packages: List[str] = []
+
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()  # Remove leading/trailing whitespace
+
+                # Skip empty lines and comment-only lines
+                if not line or line.startswith('#'):
+                    continue
+
+                # Remove comments at the end of the line
+                if '#' in line:
+                    line = line.split('#', 1)[0].strip() # Splitting from the left side only once
+
+                # Add the package name to the list
+                if line:  # Ensure there's something left after removing comments
+                    packages.append(line)
+
+    except FileNotFoundError:
+        console.print(f"Error: File not found: {filepath}", style='critical')
+    except Exception as e:
+        console.print(f"An error occurred: {e}", style='critical')
+
+    return packages
+
+def find_subdirectory(source_name: str) -> Union[str, None]:
+    """
+    Finds the source directory by name within the current directory structure
+    using the 'find' command.
+
+    Args:
+        source_name: The name of the source directory to find.
+
+    Returns:
+        The absolute path to the source directory if found, otherwise None.
+    """
+
+    try:
+        # Execute the 'find' command
+        result = subprocess.run(
+            ['find', '.', '-name', source_name, '-type', 'd', '-print0'],  # Find directories only, print null-terminated
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        if output:
+            # Split the output by null characters (handles filenames with spaces or newlines)
+            paths = output.split('\0')
+            # Return the first matching directory (assuming there's only one)
+            return os.path.abspath(paths[0])
+
+        else:
+            console.print(f"Error: Source directory '{source_name}' not found using 'find' command.", style='error')
+            return None
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing find command: {e}", style='critical')
+        return None
+    except FileNotFoundError:
+        console.print("Error: find command not found. Please ensure find is installed.", style='critical')
+        return None
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return None
+
+def copy_file_structure(source: str, destination: str) -> None:
+    """
+    Copies the file structure (folders and files) from a source directory to a
+    destination directory, creating any missing folders in the destination.
+
+    Args:
+        source: The path to the source directory.
+        destination: The path to the destination directory.
+    """
+
+    try:
+        # Check if the source directory exists
+        if not os.path.isdir(source):
+            source = find_subdirectory(source)
+            if not source:
+                console.print(f"Error: Source directory '{source}' not found.", style='error')
+                return
+
+        # Create the destination directory if it doesn't exist
+        os.makedirs(destination, exist_ok=True)  # exist_ok=True prevents an error if the directory already exists
+
+        total_files = sum(len(files) for _, _, files in os.walk(source))
+
+        with Progress() as progress:
+            task = progress.add_task("[green]Copying files...", total=total_files)
+
+            for root, _, files in os.walk(source):
+                # Create the corresponding directory structure in the destination
+                dest_dir = os.path.join(destination, os.path.relpath(root, source))
+                os.makedirs(dest_dir, exist_ok=True)
+
+                for file in files:
+                    source_file = os.path.join(root, file)
+                    dest_file = os.path.join(dest_dir, file)
+                    try:
+                        shutil.copy2(source_file, dest_file)  # copy2 preserves metadata
+                        progress.update(task, advance=1)
+                    except Exception as e:
+                        console.print(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}", style='error')
+
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+
+def write_config_to_file(config_lines: List[str], target_file: str) -> None:
+    """
+    Writes a list of configuration lines to a target file, appending each line with a newline.
+    Creates the file if it does not exist.
+
+    Args:
+        config_lines: A list of strings, where each string represents a configuration line.
+        target_file: The path to the file to write the configuration lines to.
+    """
+    try:
+        with open(target_file, 'a') as f:  # Open in append mode ('a') - creates the file if it does not exist
+            for line in config_lines:
+                f.write(line + '\n')  # Append each line with a newline
+
+    except Exception as e:
+        console.print(f"Error writing to '{target_file}': {e}", style='critical')
+
 def select_from_directory_with_search(directory: str, item_type: str, remove_extension: bool = False) -> str:
     """
     Lists and allows the user to select an item from a directory, with a search function.
@@ -604,9 +893,16 @@ def run_bash(description :str, command :str, input=None, output_var=None,  **kwa
 if __name__ == '__main__':
 
     console.clear()
+
+#-- System check  -------------------------------------------------------------
+
     check_sudo()
 
-    #-- User input ------------------------------------------------------------
+    if not SYSTEM_CPU:  SYSTEM_CPU  = get_cpu_brand()
+    if not SYSTEM_GPU:  SYSTEM_GPU  = get_graphics_card_brand()
+    if not SYSTEM_VIRT: SYSTEM_VIRT = get_virtualizer().capitalize()
+
+#-- User input ----------------------------------------------------------------
 
     console.print(Rule("User selections for installation"), style='success')
 
@@ -620,9 +916,22 @@ if __name__ == '__main__':
     if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = select_timezone()
     if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
 
-    #-- User validation --------------------------------------------------------
+#-- User validation --------------------------------------------------------
 
     console.print(Rule("Installation selections"), style='success')
+
+    if SYSTEM_CPU:
+        console.print(f'CPU .................: [green]{SYSTEM_CPU}[/]', style='info')
+    else:
+        console.print('CPU not detected', style='critical')
+
+    if SYSTEM_GPU:
+        console.print(f'GPU .................: [green]{SYSTEM_GPU}[/]', style='info')
+    else:
+        console.print('GPU not detected', style='critical')
+
+    if SYSTEM_VIRT:
+        console.print(f'Virtualiser .........: [green]{SYSTEM_VIRT}[/]', style='info')
 
     if DRIVE:
         console.print(f'Selected drive ......: [green]{DRIVE}[/]', style='info')
@@ -658,10 +967,11 @@ if __name__ == '__main__':
     if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
 
-    #-- System Preparation and Checks  -----------------------------------------
-    run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
+#-- System Preparation and Checks  -----------------------------------------
 
-    #-- Disk Partitioning, Formatting and Mounting  ---------------------------
+    # run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
+
+#-- Disk Partitioning, Formatting and Mounting  ---------------------------
 
     console.print(Rule("Partitioning, Encrypting and Formatting"), style='success')
 
@@ -678,7 +988,8 @@ if __name__ == '__main__':
     run_bash('Partition 2 - Formatting {PART_2_NAME}','mkfs.vfat -n {PART_2_NAME} -F 32 {DRIVE}2')
     run_bash('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
 
-    # -- partition 1 ----------------------------------------------------------
+##- partition 1 ----------------------------------------------------------
+
     run_bash('Partition 1 - Encrypting {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_NAME} {DRIVE}1',input="{LUKS_PASSWORD}")
     run_bash('Partition 1 - Get UUID for {PART_1_NAME}', 'cryptsetup luksUUID {DRIVE}1', output_var='PART_1_UUID')
     run_bash('Partition 1 - Open {PART_1_NAME}', 'cryptsetup luksOpen {DRIVE}1 {PART_1_UUID}' ,input="{LUKS_PASSWORD}")
@@ -695,35 +1006,86 @@ if __name__ == '__main__':
     run_bash('Partition 1 - Create subvolume @cache-pacman-pkgs',  'btrfs subvolume create /mnt/@cache-pacman-pkgs')
     run_bash('Partition 1 - Create subvolume @var',                'btrfs subvolume create /mnt/@var')
     run_bash('Partition 1 - Create subvolume @var-log',            'btrfs subvolume create /mnt/@var-log')
-    run_bash('Partition 1 - Create subvolume @var-tmp',            'btrfs subvolume create /mnt/@var-lib')
+    run_bash('Partition 1 - Create subvolume @var-tmp',            'btrfs subvolume create /mnt/@var-tmp')
     run_bash('Partition 1 - Umount {PART_1_NAME}', 'umount /mnt')
 
-    # Copy-on-Write is no good for big files that are written multiple times.
+    # Copy-on-Write is not good for big files that are written multiple times.
     # This includes: logs, containers, virtual machines, databases, etc.
     # They usually lie in /var, therefore CoW will be disabled for everything in /var
     # Note that currently btrfs does not support the nodatacow mount option.
-    run_bash('Partition 1 - Mount @',                  'mount         -o subvol=@,                    {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt')
-    run_bash('Partition 1 - Mount @home',              'mount --mkdir -o subvol=@home,                {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home')
-    run_bash('Partition 1 - Mount @swap',              'mount --mkdir -o subvol=@swap,                {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.swap')
-    run_bash('Partition 1 - Mount @snaphots',          'mount --mkdir -o subvol=@snapshots,           {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.snapshots')
-    run_bash('Partition 1 - Mount @home-snapshots',    'mount --mkdir -o subvol=@home-snapshots,      {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home/.snaphots')
-    run_bash('Partition 1 - Mount @var',               'mount --mkdir -o subvol=@var,                 {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var')
-    run_bash('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,             {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/log')
-    run_bash('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,             {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/tmp')
-    run_bash('Partition 1 - Mount @libvirt',           'mount --mkdir -o subvol=@libvirt,             {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/libvirt')
-    run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,              {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/docker')
-    run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-packgs, {BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
+    run_bash('Partition 1 - Mount @',                  'mount         -o subvol=@,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt')
+    run_bash('Partition 1 - Mount @home',              'mount --mkdir -o subvol=@home,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home')
+    run_bash('Partition 1 - Mount @swap',              'mount --mkdir -o subvol=@swap,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.swap')
+    run_bash('Partition 1 - Mount @snaphots',          'mount --mkdir -o subvol=@snapshots,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.snapshots')
+    run_bash('Partition 1 - Mount @home-snapshots',    'mount --mkdir -o subvol=@home-snapshots,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home/.snaphots')
+    run_bash('Partition 1 - Mount @var',               'mount --mkdir -o subvol=@var,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var')
+    run_bash('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/log')
+    run_bash('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/tmp')
+    run_bash('Partition 1 - Mount @libvirt',           'mount --mkdir -o subvol=@libvirt,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/libvirt')
+    run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/docker')
+    run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-pkgs,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
     run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
+    Prompt.ask('Wait here')
+
+##- partition 2 ---------------------------------------------------------------
 
     run_bash('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 {DRIVE}2 /mnt/efi')
 
-    # Create swap
+##- swap file -----------------------------------------------------------------
 
-# btrfs filesystem mkswapfile /mnt/.swap/swapfile
-# mkswap /mnt/.swap/swapfile # according to btrfs doc it shouldn't be needed, it's a bug
-# swapon /mnt/.swap/swapfile # we use the swap so that genfstab detects it
+    run_bash('Swapfile creation','btrfs filesystem mkswapfile /mnt/.swap/swapfile')
+    run_bash('Swapfile make','mkswap /mnt/.swap/swapfile')
+    run_bash('Swapfile on','swapon /mnt/.swap/swapfile')
+
+#-- Software Installation  ----------------------------------------------------
+
+    # Driver packages all opensource / check on virtualbox
+    packages = get_packages_from_file('packages/pacman')
+    if SYSTEM_CPU  == 'Intel'  : packages.append('intel-ucode')
+    if SYSTEM_CPU  == 'AMD'    : packages.append('amd-ucode')
+    if SYSTEM_VIRT == 'Oracle' : packages.append('virtualbox-guest-utils')
+    if SYSTEM_VIRT == 'VMWare' : packages.append('open-vm-tools')
+
+    # Only install open-source GPU drivers if not in virtualiser
+    if SYSTEM_VIRT == 'metal':
+        if SYSTEM_GPU == 'Intel'   : packages.append('vulkan-intel', 'intel-media-driver')
+        if SYSTEM_GPU == 'AMD'     : packages.append('vulkan-radeon')
+        if SYSTEM_GPU == 'NVIDIA'  : packages.append('vulkan-nouveau')
+
+    SYSTEM_PKGS = ' '.join(packages)
+    run_bash('Installing base packages', 'pacstrap -K /mnt {SYSTEM_PKGS}')
+
+#-- Copy config files  --------------------------------------------------------
+
+    copy_file_structure('rootfs', '/mnt')
+
+#-- Patch config files  --------------------------------------------------------
+
+    run_bash('Copy mirror list', 'cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/')
+    run_bash('Patch pacman configuration -colours', 'sed -i "s/#Color/Color/g" /mnt/etc/pacman.conf')
+    run_bash('Patch qemu configuration - user', 'sed -i "s/username_placeholder/$user/g" /mnt/etc/libvirt/qemu.conf')
+    run_bash('Patch tty configuration - user', 'sed -i "s/username_placeholder/$user/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
+    run_bash('Patch shell - dash', 'ln -sfT dash /mnt/usr/bin/sh')
+
+#-- Write Kernel Command Line  ------------------------------------------------
+
+    # Note: Erwin cryptedevice :UUID or archlinux?
+    SYSTEM_CMD = [
+        'lsm=landlock,lockdown,yama,integrity,apparmor,bpf', # Customize Linux Security Modules to include AppArmor
+        'lockdown=integrity',                                # Put kernel in integrity lockdown mode
+        f'cryptdevice={PART_1_NAME}:{PART_1_UUID}',          # The LUKS device to decrypt
+        f'root=/dev/mapper/{PART_1_UUID}',                   # The decrypted device to mount as the root
+        'rootflags=subvol=@',                                # Mount the @ btrfs subvolume inside the decrypted device as the root
+        'mem_sleep_default=deep',                            # Allow suspend state (puts device into sleep but keeps powering the RAM for fast sleep mode recovery)
+        'audit=1',                                           # Ensure that all processes that run before the audit daemon starts are marked as auditable by the kernel
+        'audit_backlog_limit=32768',                         # Increase default log size
+        'quiet splash rd.udev.log_level=3'                   # Completely quiet the boot process to display some eye candy using plymouth instead :)
+    ]
+
+    with open('test.txt', 'a') as f:
+        f.write(' '.join(SYSTEM_CMD) + '\n')
 
 
-    # -- Cleaning up -----------------------------------------------------------
-    run_bash('Partition 1 - Close {PART_1_UUID}', 'cryptsetup luksClose {PART_1_UUID}')
+# -- Cleaning up --------------------------------------------------------------
     run_bash('Partition X - Umount', 'umount --recursive /mnt')
+    run_bash('Partition 1 - Close {PART_1_UUID}', 'cryptsetup luksClose {PART_1_UUID}')
