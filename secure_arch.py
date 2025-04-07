@@ -78,6 +78,7 @@ USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
 SYSTEM_LOCALE = None            # System locale ('en_US')
 SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
+SYSTEM_KEYB = None              # System keyboard layout
 SYSTEM_COUNTRY = None           # System country ('Australia')
 SYSTEM_COUNTRY_CODE = None      # System country code ('au')
 SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
@@ -97,6 +98,7 @@ SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
 SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
 SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
 SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
+#SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
 SYSTEM_TIMEZONE  = 'Australia\Melbourne'   # System timezone
 
 #----------------------------------------------------------------------------------------------------------------------
@@ -811,6 +813,131 @@ def select_timezone() -> str:
         return f"{country}/{place}"
 
 
+def get_available_keyboards() -> List[str]:
+    """
+    Retrieves a list of available keyboard layouts using the 'localectl list-keymaps' command.
+
+    Returns:
+        A list of keyboard layout names (e.g., "us", "de", "fr").
+        Returns an empty list if an error occurs or no layouts are found.
+    """
+
+    try:
+        # Execute localectl list-keymaps
+        result = subprocess.run(
+            ['localectl', 'list-keymaps'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+        keyboards = output.splitlines()
+        return keyboards
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing localectl: {e}", style='critical')
+        return []
+    except FileNotFoundError:
+        console.print("Error: localectl command not found. Please ensure systemd is installed.", style='critical')
+        return []
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return []
+
+
+def select_keyboard_layout() -> str:
+    """
+    Lists available keyboard layouts in pages and prompts the user to select one.
+
+    Returns:
+        The selected keyboard layout (e.g., "us", "de").
+        Returns an empty string if no keyboard is selected or an error occurs.
+    """
+
+    keyboards = get_available_keyboards()
+
+    if not keyboards:
+        return ""
+
+    PAGE_SIZE = 30
+    start_index = 0
+    while True:
+        end_index = min(start_index + PAGE_SIZE, len(keyboards))
+        page_keyboards = keyboards[start_index:end_index]
+
+        table = Table(title="Available Keyboard Layouts (Page)")
+        table.add_column("Index", justify="right", style="success", no_wrap=True)
+        table.add_column("Keyboard Layout", style="success")
+
+        for i, keyboard in enumerate(page_keyboards):
+            table.add_row(str(start_index + i + 1), keyboard)
+
+        console.print(table)
+
+        # Build Prompt
+        prompt_text = "[bold blue]Enter the index of the keyboard layout to select[/]\n"
+        if start_index > 0:
+            prompt_text += "[bold green](P)revious Page[/]\n"
+        if end_index < len(keyboards):
+            prompt_text += "[bold green](N)ext Page[/]\n"
+        prompt_text += "[bold blue]Selection[/]"
+
+        # Get User Input
+        selection = Prompt.ask(prompt_text, default="", show_default=False).lower()
+
+        # Check if a valid Keyboard Layout Number has been selected
+        if selection.isdigit():
+            index = int(selection) - 1
+            if start_index <= index < end_index:
+                return keyboards[index]
+            else:
+                console.print("Invalid selection. Please enter a valid index for this page.", style='error')
+
+        # Navigation Commands
+        elif selection == 'p' and start_index > 0:
+            start_index -= PAGE_SIZE
+        elif selection == 'n' and end_index < len(keyboards):
+            start_index += PAGE_SIZE
+        elif selection == 's':
+            search_term = Prompt.ask("[yellow]Enter search term for keyboard layout (or press Enter to list all):[/]")
+            filtered_keyboards = [kb for kb in keyboards if search_term.lower() in kb.lower()]
+            if not filtered_keyboards:
+                console.print("No matching layouts found. Please try again.", style='error')
+            else:
+                return select_keyboard_layout_from_list(filtered_keyboards)
+        else:
+            console.print("Invalid input. Please enter a number, 'P' for previous, or 'N' for next page.", style='error')
+
+
+def select_keyboard_layout_from_list(keyboards: List[str]) -> str:
+
+    if not keyboards:
+        console.print("[bold red]No keyboard layouts found.[/]")
+        return ""
+
+    table = Table(title="Available Keyboard Layouts")
+    table.add_column("Index", justify="right", style="cyan", no_wrap=True)
+    table.add_column("Keyboard Layout", style="magenta")
+
+    for i, keyboard in enumerate(keyboards):
+        table.add_row(str(i + 1), keyboard)
+
+    console.print(table)
+
+    while True:
+        selection = Prompt.ask("[yellow]Enter the index of the keyboard layout to select:[/]", default="1", show_default=True)
+        try:
+            index = int(selection) - 1
+            if 0 <= index < len(keyboards):
+                return keyboards[index]
+            else:
+                console.print("Invalid selection. Please enter a valid index.", style='error')
+        except ValueError:
+            console.print("Invalid input. Please enter a number.", style='error')
+        except Exception as e:
+            console.print(f"An unexpected error occurred: {e}", style='critical')
+            return ""
+
+
 def run_bash(description :str, command :str, input=None, output_var=None,  **kwargs):
     '''
     Execute a bash command with optional input from stdin and return the return code, output and error
@@ -913,6 +1040,7 @@ if __name__ == '__main__':
     if not LUKS_PASSWORD: LUKS_PASSWORD = select_password('Luks', min_length=3)
     if not SYSTEM_LOCALE: SYSTEM_LOCALE = select_locale()
     if not SYSTEM_CHARMAP: SYSTEM_CHARMAP = select_charmap()
+    if not SYSTEM_KEYB: SYSTEM_KEYB = select_keyboard_layout()
     if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = select_timezone()
     if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
 
@@ -952,6 +1080,11 @@ if __name__ == '__main__':
         console.print(f'Selected charmap ....: [green]{SYSTEM_CHARMAP}[/]', style='info')
     else:
         console.print('No charmap selected.', style='critical')
+
+    if SYSTEM_KEYB:
+        console.print(f'Selected keymap .....: [green]{SYSTEM_KEYB}[/]', style='info')
+    else:
+        console.print('No keymap selected.', style='critical')
 
     if SYSTEM_TIMEZONE:
         console.print(f'Selected timezone....: [green]{SYSTEM_TIMEZONE}[/]', style='info')
