@@ -21,7 +21,7 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
 from rich.progress import Progress
-from typing import Union, Tuple
+from typing import Union, Tuple, Literal
 
 # 'rich' objects
 theme = Theme({
@@ -76,6 +76,7 @@ PART_2_UUID = None              # UUID of partition 2
 USER_NAME = None                # User name for backup devices (no root)
 USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
+SYSTEM_HOSTNAME = None          # System hostname
 SYSTEM_LOCALE = None            # System locale ('en_US')
 SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
 SYSTEM_KEYB = None              # System keyboard layout
@@ -87,6 +88,7 @@ SYSTEM_GPU = None               # System GPU brand (Intel, AMD, NVIDIA, etc)
 SYSTEM_VIRT = None              # System virtualizer (if any) (oracle, vmware, docker, etc)
 SYSTEM_PKGS = None              # System packages to install
 SYSTEM_CMD = None               # System commands lines
+SYSTEM_MODULES = None           # System modules
 
 # Deleteme
 DRIVE = '/dev/sdb'              # The device that will be made into a backup device
@@ -94,12 +96,13 @@ DRIVE_PASSWORD = '123'          # Encryption password for partitions
 USER_NAME = 'echjansen'         # User name for backup devices (no root)
 USER_PASSWORD = '123'           # User password for backup device
 LUKS_PASSWORD = '123'           # Luks password for drive(s)
+SYSTEM_HOSTNAME = 'archlinux'   # System host name
 SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
 SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
 SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
 SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
-#SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
-SYSTEM_TIMEZONE  = 'Australia\Melbourne'   # System timezone
+SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
+SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 #----------------------------------------------------------------------------------------------------------------------
 # Supporting functions
@@ -243,6 +246,37 @@ def get_virtualizer() -> str:
         return "Unknown"
 
 
+def get_keyboards() -> List[str]:
+    """
+    Retrieves a list of available keyboard layouts using the 'localectl list-keymaps' command.
+
+    Returns:
+        A list of keyboard layout names (e.g., "us", "de", "fr").
+        Returns an empty list if an error occurs or no layouts are found.
+    """
+
+    try:
+        # Execute localectl list-keymaps
+        result = subprocess.run(
+            ['localectl', 'list-keymaps'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+        keyboards = output.splitlines()
+        return keyboards
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing localectl: {e}", style='critical')
+        return []
+    except FileNotFoundError:
+        console.print("Error: localectl command not found. Please ensure systemd is installed.", style='critical')
+        return []
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return []
+
+
 def get_packages_from_file(filepath: str) -> List[str]:
     """
     Reads a file containing a list of package names (one per line),
@@ -368,6 +402,37 @@ def copy_file_structure(source: str, destination: str) -> None:
 
     except Exception as e:
         console.print(f"An unexpected error occurred: {e}", style='critical')
+
+def write_line_to_file(description: str, target_file: str, line: str, mode: Literal['overwrite', 'append'] = 'append') -> None:
+    """
+    Writes a line to a configuration file, either overwriting the existing file or appending to it.
+
+    Mimics the behavior of 'echo "line" > file' (overwrite) and 'echo "line" >> file' (append) in Bash.
+
+    Args:
+        description: Will be logged during execution
+        target_file: The path to the configuration file.
+        line:        The line to write to the file.
+        mode:        'overwrite' to replace the file content, or 'append' to add to the end. Defaults to 'append'.
+    """
+
+    try:
+        if mode == 'overwrite':
+            file_mode = 'w'  # Open for writing (overwrites existing file)
+        elif mode == 'append':
+            file_mode = 'a'  # Open for appending (creates file if it doesn't exist)
+        else:
+            console.print("Error: Invalid mode.  Must be 'overwrite' or 'append'.", style='error')
+            return
+
+        log.info(f'{description_formatted}')
+
+        with open(target_file, file_mode) as f:
+            f.write(line + '\n')  # Write the line with a newline character
+
+    except Exception as e:
+        console.print(f"Error writing to '{target_file}' (mode: {mode}): {e}", style='critical')
+
 
 def write_config_to_file(config_lines: List[str], target_file: str) -> None:
     """
@@ -813,37 +878,6 @@ def select_timezone() -> str:
         return f"{country}/{place}"
 
 
-def get_available_keyboards() -> List[str]:
-    """
-    Retrieves a list of available keyboard layouts using the 'localectl list-keymaps' command.
-
-    Returns:
-        A list of keyboard layout names (e.g., "us", "de", "fr").
-        Returns an empty list if an error occurs or no layouts are found.
-    """
-
-    try:
-        # Execute localectl list-keymaps
-        result = subprocess.run(
-            ['localectl', 'list-keymaps'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-        keyboards = output.splitlines()
-        return keyboards
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing localectl: {e}", style='critical')
-        return []
-    except FileNotFoundError:
-        console.print("Error: localectl command not found. Please ensure systemd is installed.", style='critical')
-        return []
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return []
-
-
 def select_keyboard_layout() -> str:
     """
     Lists available keyboard layouts in pages and prompts the user to select one.
@@ -853,7 +887,7 @@ def select_keyboard_layout() -> str:
         Returns an empty string if no keyboard is selected or an error occurs.
     """
 
-    keyboards = get_available_keyboards()
+    keyboards = get_keyboards()
 
     if not keyboards:
         return ""
@@ -1038,13 +1072,14 @@ if __name__ == '__main__':
     if not USER_NAME: USER_NAME = select_username()
     if not USER_PASSWORD: USER_PASSWORD = select_password('User', min_length=3)
     if not LUKS_PASSWORD: LUKS_PASSWORD = select_password('Luks', min_length=3)
+    if not SYSTEM_HOSTNAME: SYSTEM_HOSTNAME = 'archlinux' # TODO
     if not SYSTEM_LOCALE: SYSTEM_LOCALE = select_locale()
     if not SYSTEM_CHARMAP: SYSTEM_CHARMAP = select_charmap()
     if not SYSTEM_KEYB: SYSTEM_KEYB = select_keyboard_layout()
     if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = select_timezone()
     if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
 
-#-- User validation --------------------------------------------------------
+#-- User validation -----------------------------------------------------------
 
     console.print(Rule("Installation selections"), style='success')
 
@@ -1070,6 +1105,11 @@ if __name__ == '__main__':
         console.print(f'Selected username ...: [green]{USER_NAME}[/]', style='info')
     else:
         console.print('No username selected.', style='critical')
+
+    if SYSTEM_HOSTNAME:
+        console.print(f'Selected hostname ...: [green]{SYSTEM_HOSTNAME}[/]', style='info')
+    else:
+        console.print('No hostname selected.', style='critical')
 
     if SYSTEM_LOCALE:
         console.print(f'Selected locale .....: [green]{SYSTEM_LOCALE}[/]', style='info')
@@ -1100,11 +1140,11 @@ if __name__ == '__main__':
     if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
 
-#-- System Preparation and Checks  -----------------------------------------
+#-- System Preparation and Checks  --------------------------------------------
 
     # run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
-#-- Disk Partitioning, Formatting and Mounting  ---------------------------
+#-- Disk Partitioning, Formatting and Mounting  -------------------------------
 
     console.print(Rule("Partitioning, Encrypting and Formatting"), style='success')
 
@@ -1121,7 +1161,7 @@ if __name__ == '__main__':
     run_bash('Partition 2 - Formatting {PART_2_NAME}','mkfs.vfat -n {PART_2_NAME} -F 32 {DRIVE}2')
     run_bash('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
 
-##- partition 1 ----------------------------------------------------------
+##- partition 1 ---------------------------------------------------------------
 
     run_bash('Partition 1 - Encrypting {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_NAME} {DRIVE}1',input="{LUKS_PASSWORD}")
     run_bash('Partition 1 - Get UUID for {PART_1_NAME}', 'cryptsetup luksUUID {DRIVE}1', output_var='PART_1_UUID')
@@ -1170,7 +1210,7 @@ if __name__ == '__main__':
     run_bash('Swapfile make','mkswap /mnt/.swap/swapfile')
     run_bash('Swapfile on','swapon /mnt/.swap/swapfile')
 
-#-- Software Installation  ----------------------------------------------------
+#-- Install Linux Packages  ---------------------------------------------------
 
     # Driver packages all opensource / check on virtualbox
     packages = get_packages_from_file('packages/pacman')
@@ -1186,13 +1226,13 @@ if __name__ == '__main__':
         if SYSTEM_GPU == 'NVIDIA'  : packages.append('vulkan-nouveau')
 
     SYSTEM_PKGS = ' '.join(packages)
-    run_bash('Installing base packages', 'pacstrap -K /mnt {SYSTEM_PKGS}')
+    run_bash('Installing Linux packages', 'pacstrap -K /mnt {SYSTEM_PKGS}')
 
 #-- Copy config files  --------------------------------------------------------
 
     copy_file_structure('rootfs', '/mnt')
 
-#-- Patch config files  --------------------------------------------------------
+#-- Patch config files  -------------------------------------------------------
 
     run_bash('Copy mirror list', 'cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/')
     run_bash('Patch pacman configuration -colours', 'sed -i "s/#Color/Color/g" /mnt/etc/pacman.conf')
@@ -1215,10 +1255,154 @@ if __name__ == '__main__':
         'quiet splash rd.udev.log_level=3'                   # Completely quiet the boot process to display some eye candy using plymouth instead :)
     ]
 
-    with open('test.txt', 'a') as f:
-        f.write(' '.join(SYSTEM_CMD) + '\n')
+    with open('test.txt', 'a') as f: f.write(' '.join(SYSTEM_CMD) + '\n')
 
+#-- Set Locale etc  -----------------------------------------------------------
+
+    run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTTEM_KEYB}" >/mnt/etc/vconsole.conf')
+    run_bash('Set the hostname to {SYSTEM_HOSTNAME}', 'echo "{SYSTEM_HOSTNAME}" >/mnt/etc/hostname')
+    run_bash('Set the language to {SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}', 'echo "{SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}" >>/mnt/etc/locale.gen')
+    run_bash('Set the timezone to {SYSTEM_TIMEZONE}', 'ln -sf /usr/share/zoneinfo/{SYSTEM_TIMEZONE} /mnt/etc/localtime')
+
+#-- Generate fstab  -----------------------------------------------------------
+
+    run_bash('Generate fstab', 'genfstab -U /mnt >>/mnt/etc/fstab')
+
+#-- Configure Plymouth  -------------------------------------------------------
+
+    run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
+    run_bash('Set login defs', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /etc/login.defs")
+
+#-- User and Group accounts  --------------------------------------------------
+
+    run_bash('Add user account for {USER_NAME}', 'arch-chroot /mnt useradd -m -s /bin/sh {USER_NAME}')
+    run_bash('Create group wheel', 'arch-chroot /mnt groupadd -rf wheel')
+    run_bash('Create group audit', 'arch-chroot /mnt groupadd -rf audit')
+    run_bash('Create group libvirt', 'arch-chroot /mnt groupadd -rf libvirt')
+    run_bash('Create group firejail', 'arch-chroot /mnt groupadd -rf firejail')
+    run_bash('Create group allow-internet', 'arch-chroot /mnt groupadd -rf allow-internet')
+    run_bash('Add {USER_NAME} to wheel', 'arch-chroot /mnt gpasswd -a {USER_NAME} wheel')
+    run_bash('Add {USER_NAME} to audit', 'arch-chroot /mnt gpasswd -a {USER_NAME} audit')
+    run_bash('Add {USER_NAME} to libvirt', 'arch-chroot /mnt gpasswd -a {USER_NAME} libvirt')
+    run_bash('Add {USER_NAME} to firejail', 'arch-chroot /mnt gpasswd -a {USER_NAME} firejail')
+    run_bash('Set password for {USER_NAME}', 'echo {USER_NAME}:{USER_PASSWORD} | arch-chroot /mnt chpasswd')
+
+
+#-- Install AUR helper --------------------------------------------------------
+
+    run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
+    run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
+
+    bash_command = f"""arch-chroot -u "{USERN_NAME}" /mnt /bin/bash -c 'mkdir /tmp/yay.$$ &&
+    cd /tmp/yay.$$ &&
+    curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD &&
+    makepkg -si --noconfirm'
+    """
+    run_bash('Install AUR helper', bash_command)
+
+#-- Install Aur Packages  -----------------------------------------------------
+
+    # Driver packages all opensource / check on virtualbox
+    packages = get_packages_from_file('packages/aur')
+
+    if SYSTEM_VIRT == 'metal':
+        if SYSTEM_GPU == 'NVIDIA'  : packages.append('nouveau-fw')
+
+    SYSTEM_PKGS = ' '.join(packages)
+    run_bash('Installing Aur packages', 'HOME="/home/{USER_NAME}" arch-chroot -u "{USER_NAME}" /mnt /usr/bin/yay --noconfirm -Sy {SYSTEM_PKGS}')
+
+    run_bash('Remove pacman wrapper', 'mv /mnt/usr/local/bin/pacman.disable /mnt/usr/local/bin/pacman')
+    run_bash('Remove NOPASSWD sudo from users', "sed -i '$ d' /mnt/etc/sudoers'")
+
+#-- Install Login -------------------------------------------------------------
+
+    run_bash('Installing Login screen', 'arch-chroot /mnt plymouth-set-default-theme splash')
+
+#-- Installing Modules --------------------------------------------------------
+
+    if SYSTEM_GPU ==  'AMD':
+        SYSTEM_MODULES = 'amdgpu'
+    elif SYSTEM_GPU == 'NVIDEA':
+        SYSTEM_MODULES = 'nouvea'
+    elif SYSTEM_CPU == 'Intel' and SYSTEM_GPU == 'Intel':
+        SYSTEM_MODULES = 'i915'
+    else:
+        SYSTEM_MODULES = ''
+
+    bash_command = """cat <<EOF >/mnt/etc/mkinitcpio.conf
+    MODULES={SYSTEM_MODULES}
+    BINARIES=(setfont)
+    FILES=()
+    HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)
+    EOF
+    """
+
+    run_bash('Configuring mkinitcpio', bash_command)
+    run_bash('Installing mkinitpcio', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
+
+
+# -- Generate UEFI keys, sign kernels, enroll keys ----------------------------
+
+    run_bash('Configure Linux Hardened', "echo 'KERNEL=linux-hardened' >/mnt/etc/arch-secure-boot/config")
+    run_bash('Insatll Linux Hardened', 'arch-chroot /mnt arch-secure-boot initial-setup')
+
+# -- Hardening ----------------------------------------------------------------
+
+    run_bash('Hardening /boot', 'arch-chroot /mnt chmod 700 /boot')
+    run_bash('Disabling root', 'arch-chroot /mnt passwd -dl root')
+
+# -- Configuring Firejail -----------------------------------------------------
+
+    run_bash('Configure firejail', 'arch-chroot /mnt /usr/bin/firecfg')
+    run_bash('Enable firejail for {USER_NAME}', 'echo "{USER_NAME}" >/mnt/etc/firejail/firejail.users')
+
+# -- Configuring DNS ----------------------------------------------------------
+
+    run_bash('Remove default resolv.conf', 'rm -f /mnt/etc/resolv.conf')
+    run_bash('Install resolv.conf', 'arch-chroot /mnt ln -s /usr/lib/systemd/resolv.conf /etc/resolv.conf')
+
+# -- Configuring Systemd services ---------------------------------------------
+
+    run_bash('Configure systemd service - systemd-networkd', 'arch-chroot /mnt systemctl enable systemd-networkd')
+    run_bash('Configure systemd service - systemd-resolved', 'arch-chroot /mnt systemctl enable systemd-resolved')
+    run_bash('Configure systemd service - systemd-timesyncd', 'arch-chroot /mnt systemctl enable systemd-timesyncd')
+    run_bash('Configure systemd service - getty@tty1', 'arch-chroot /mnt systemctl enable getty@tty1')
+    run_bash('Configure systemd service - dbus-broker', 'arch-chroot /mnt systemctl enable dbus-broker')
+    run_bash('Configure systemd service - iwd', 'arch-chroot /mnt systemctl enable iwd')
+    run_bash('Configure systemd service - auditd', 'arch-chroot /mnt systemctl enable auditd')
+    run_bash('Configure systemd service - nftables', 'arch-chroot /mnt systemctl enable nftables')
+    run_bash('Configure systemd service - docker', 'arch-chroot /mnt systemctl enable docker')
+    run_bash('Configure systemd service - libvirtd', 'arch-chroot /mnt systemctl enable libvirtd')
+    run_bash('Configure systemd service - check-secure-boot', 'arch-chroot /mnt systemctl enable check-secure-boot')
+    run_bash('Configure systemd service - apparmor', 'arch-chroot /mnt systemctl enable apparmor')
+    run_bash('Configure systemd service - auditd-notify', 'arch-chroot /mnt systemctl enable auditd-notify')
+    run_bash('Configure systemd service - local-forwarding-proxy', 'arch-chroot /mnt systemctl enable local-forwarding-proxy')
+
+# -- Configuring Systemd timers -----------------------------------------------
+
+    run_bash('Configure systemd timer - snapper-timeline.timer', 'arch-chroot /mnt systemctl enable snapper-timeline.timer')
+    run_bash('Configure systemd timer - snapper-cleanup.timer', 'arch-chroot /mnt systemctl enable snapper-cleanup.timer')
+    run_bash('Configure systemd timer - auditor.timer', 'arch-chroot /mnt systemctl enable auditor.timer')
+    run_bash('Configure systemd timer - btrfs-scrub@-.timer', 'arch-chroot /mnt systemctl enable btrfs-scrub@-.timer')
+    run_bash('Configure systemd timer - btrfs-balance.timer', 'arch-chroot /mnt systemctl enable btrfs-balance.timer')
+    run_bash('Configure systemd timer - pacman-sync.timer', 'arch-chroot /mnt systemctl enable pacman-sync.timer')
+    run_bash('Configure systemd timer - pacman-notify.timer', 'arch-chroot /mnt systemctl enable pacman-notify.timer')
+    run_bash('Configure systemd timer - should-reboot-check.timer', 'arch-chroot /mnt systemctl enable should-reboot-check.timer')
+
+# -- Configuring Systemd user services ----------------------------------------
+
+    run_bash('Configure systemd user service - dbus-broker', 'arch-chroot /mnt systemctl --global enable dbus-broker')
+    run_bash('Configure systemd user service - journalctl-notify', 'arch-chroot /mnt systemctl --global enable journalctl-notify')
+    run_bash('Configure systemd user service - pipewire', 'arch-chroot /mnt systemctl --global enable pipewire')
+    run_bash('Configure systemd user service - wireplumber', 'arch-chroot /mnt systemctl --global enable wireplumber')
+    run_bash('Configure systemd user service - gammastep', 'arch-chroot /mnt systemctl --global enable gammastep')
 
 # -- Cleaning up --------------------------------------------------------------
+
     run_bash('Partition X - Umount', 'umount --recursive /mnt')
     run_bash('Partition 1 - Close {PART_1_UUID}', 'cryptsetup luksClose {PART_1_UUID}')
+
+# -- Done ---------------------------------------------------------------------
+
+    if prompt.ask("[green]Installation complete successfully. Reboot?[/]", choices=['y', 'n']) == 'y':
+        run_bash('Rebooting', 'reboot now')
