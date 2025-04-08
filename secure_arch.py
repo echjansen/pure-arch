@@ -1192,12 +1192,13 @@ if __name__ == '__main__':
     run_bash('Partition 1 - Mount @snaphots',          'mount --mkdir -o subvol=@snapshots,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.snapshots')
     run_bash('Partition 1 - Mount @home-snapshots',    'mount --mkdir -o subvol=@home-snapshots,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home/.snaphots')
     run_bash('Partition 1 - Mount @var',               'mount --mkdir -o subvol=@var,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var')
+
+    run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
     run_bash('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/log')
     run_bash('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/tmp')
-    run_bash('Partition 1 - Mount @libvirt',           'mount --mkdir -o subvol=@libvirt,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/libvirt')
-    run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/docker')
+    run_bash('Partition 1 - Mount @libvirt',           'mount --mkdir -o subvol=@libvirt,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/libvirt')
+    run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/docker')
     run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-pkgs,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
-    run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
 
 ##- partition 2 ---------------------------------------------------------------
 
