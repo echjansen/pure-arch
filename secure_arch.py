@@ -1198,7 +1198,6 @@ if __name__ == '__main__':
     run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/lib/docker')
     run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-pkgs,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
     run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
-    Prompt.ask('Wait here')
 
 ##- partition 2 ---------------------------------------------------------------
 
@@ -1259,7 +1258,7 @@ if __name__ == '__main__':
 
 #-- Set Locale etc  -----------------------------------------------------------
 
-    run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTTEM_KEYB}" >/mnt/etc/vconsole.conf')
+    run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTEM_KEYB}" >/mnt/etc/vconsole.conf')
     run_bash('Set the hostname to {SYSTEM_HOSTNAME}', 'echo "{SYSTEM_HOSTNAME}" >/mnt/etc/hostname')
     run_bash('Set the language to {SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}', 'echo "{SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}" >>/mnt/etc/locale.gen')
     run_bash('Set the timezone to {SYSTEM_TIMEZONE}', 'ln -sf /usr/share/zoneinfo/{SYSTEM_TIMEZONE} /mnt/etc/localtime')
