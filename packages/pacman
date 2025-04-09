@@ -127,11 +127,11 @@ dbus-broker # Improved DBUS implementation (performance and security)
 # fzf
 
 # CLI
-# zsh
-# dash
-# dialog
-# ripgrep
-# bat
+zsh
+dash
+dialog
+ripgrep
+bat
 
 # Other
 most

@@ -1302,7 +1302,7 @@ if __name__ == '__main__':
         'quiet splash rd.udev.log_level=3'                   # Completely quiet the boot process to display some eye candy using plymouth instead :)
     ]
 
-    with open('test.txt', 'a') as f: f.write(' '.join(SYSTEM_CMD) + '\n')
+    with open('/mnt/etc/kernel/cmdline', 'a') as f: f.write(' '.join(SYSTEM_CMD) + '\n')
 
 #-- Set Locale etc  -----------------------------------------------------------
 
@@ -1335,31 +1335,34 @@ if __name__ == '__main__':
     run_bash('Add {USER_NAME} to audit', 'arch-chroot /mnt gpasswd -a {USER_NAME} audit')
     run_bash('Add {USER_NAME} to libvirt', 'arch-chroot /mnt gpasswd -a {USER_NAME} libvirt')
     run_bash('Add {USER_NAME} to firejail', 'arch-chroot /mnt gpasswd -a {USER_NAME} firejail')
-    run_bash('Set password for {USER_NAME}', 'echo {USER_NAME}:{USER_PASSWORD} | arch-chroot /mnt chpasswd')
-
+    run_bash('Set password for {USER_NAME}', 'arch-chroot /mnt chpasswd', input='{USER_NAME}:{USER_PASSWORD}\n')
+    # run_bash('Linux - Set password {USER_NAME}', 'chroot /mnt bash --login -c "chpasswd"', input='{USER_NAME}:{USER_PASSWORD}\n')
 
 #-- Install AUR helper --------------------------------------------------------
 
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
+    command = textwrap.dedent(f"""\
+    arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
+    cd /tmp/yay.$$ &&
+    curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD &&
+    -c makepkg -si --noconfirm'
+    """).strip()
+
     # command = textwrap.dedent(f"""\
     # #!/bin/bash
-    # set -e                      # Execute immediately
-    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c mkdir /tmp/yay.$$
-    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c cd /tmp/yay.$$
-    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD
-    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c makepkg -si --noconfirm
-    # """).strip()
+    # arch-chroot /mnt /bin/bash -c '
+    # su {USER_NAME} -c "
+    # mkdir /tmp/yay.$$ &&
+    # curl \"https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin\" -o PKGBUILD &&
+    # makepkg -si --noconfirm"
+    # '""").strip()
 
-    command = textwrap.dedent(f"""\
-    #!/bin/bash
-    arch-chroot /mnt /bin/bash -c '
-    su {USER_NAME} -c "
-    mkdir /tmp/yay.$$ &&
-    curl \"https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin\" -o PKGBUILD &&
-    makepkg -si --noconfirm"
-    '""").strip()
+    # arch-chroot -u "$user" /mnt /bin/bash -c 'mkdir /tmp/yay.$$ && \
+    #                                           cd /tmp/yay.$$ && \
+    #                                           curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && \
+    #                                           makepkg -si --noconfirm'
 
     run_bash('Install AUR helper', command)
 
