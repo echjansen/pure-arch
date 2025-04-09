@@ -1194,7 +1194,7 @@ if __name__ == '__main__':
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
 
     # Write random data to the whole disk
-    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd=1M if=/dev/urandom of={DRIVE}')
+    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}')
     # TODO if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DRIVE} | xargs -n1 wipefs --all')
     if not DEBUG: run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
 
