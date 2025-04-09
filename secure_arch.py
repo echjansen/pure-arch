@@ -1178,12 +1178,11 @@ if __name__ == '__main__':
         exit()
 
 #-- System Preparation and Checks  --------------------------------------------
+    console.print(Rule("System Installation"), style='success')
 
     run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
-
-    console.print(Rule("Partitioning, Encrypting and Formatting"), style='success')
 
     # Write random data to the whole disk
     if not DEBUG: run_bash('Disk - Write random data to disk', 'dd=1M if=/dev/urandom of={DRIVE} || true')
