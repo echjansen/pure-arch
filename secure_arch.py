@@ -999,9 +999,22 @@ def copy_file_structure(source: str, destination: str) -> None:
         log.exception('An unexpected error occurred')
         return -1, "", str(e)
 
-def run_bash(description :str, command :str, input=None, output_var=None, check_returncode: bool=True,  **kwargs):
+def run_bash(description :str, command :str, input=None, output_var=None, check_returncode: bool=True, use_strict_mode: bool = True, **kwargs):
     '''
-    Execute a bash command with optional input from stdin and return the return code, output and error
+    Execute a bash command with optional input from stdin and return the return code, output and error.
+
+    This function automatically prepends "set -euo pipefail" to the command string to enable strict error checking,
+
+    Args:
+        description (str): A description of the command being executed.
+        command (str): The bash command to execute.
+        input (str, optional): Input to pass to the command's stdin. Defaults to None.
+        output_var (str, optional): The name of a global variable to store the command's stdout in. Defaults to None.
+        check_returncode (bool, optional): Whether to check the command's return code and raise an exception if it's non-zero. Defaults to True.
+        use_strict_mode (bool, optional): Whether to prepend 'set -euo pipefail' to the command string.  Defaults to True.
+
+    Returns:
+        Tuple[int, str, str]: A tuple containing the return code, stdout, and stderr of the command.
     '''
 
     # Step when debugging
@@ -1029,6 +1042,8 @@ def run_bash(description :str, command :str, input=None, output_var=None, check_
     try:
         global_vars = {key: value for key, value in globals().items() if not key.startswith('__')}
         command_formatted = command.format(**global_vars)
+        if use_strict_mode:
+            command_formatted = f"set -euo pipefail && {command_formatted}"
     except KeyError as e:
         log.error(f'Missing variable for command: {e}')
         raise ValueError(f'Missing variable for command: {e}')
