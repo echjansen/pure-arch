@@ -49,11 +49,16 @@ class CustomFormatter(logging.Formatter):
 
 console = Console(theme=theme)
 prompt = Prompt()
-handler = RichHandler(rich_tracebacks=True, markup=True)
+handler = RichHandler(
+    rich_tracebacks=True,       # Show rich debug info during error
+    markup=True,                # Show data as Markup
+    show_time=False,            # Do not show logging time
+    show_level=True,            # Do show logging level (Info, debug, etc)
+    show_path=False)            # Do not show file causing log - always the same
 handler.setFormatter(CustomFormatter())
 log = logging.getLogger("rich")
-log.addHandler(handler)
 log.setLevel(logging.DEBUG)
+log.addHandler(handler)
 
 # Debugging variables
 DEBUG = False                   # If True, report on command during execution
