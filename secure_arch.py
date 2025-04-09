@@ -8,6 +8,7 @@
 # - [X] UEFI check
 # - [ ] Check font
 # - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
+# - [ ] Run  as /bin/sh or /bin/bash
 #----------------------------------------------------------------------------------------------------------------------
 
 import os
@@ -63,10 +64,11 @@ log.setLevel(logging.DEBUG)
 log.addHandler(handler)
 
 # Debugging variables
-DEBUG = False                   # If True, report on command during execution
+DEBUG = False                  # If True, report on command during execution
 STEP = False                   # If true, step one command at the time
 
 # Global Constants
+SYSTEM_FONT = 'ter-716n'       # System font ('ter-132n' , 'ter-716n')
 PART_1_NAME = "Primary"
 PART_2_NAME = "ESP"
 BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
@@ -1180,6 +1182,11 @@ if __name__ == '__main__':
 #-- System Preparation and Checks  --------------------------------------------
     console.print(Rule("System Installation"), style='success')
 
+    run_bash('Set the time server', 'timedatectl set-ntp true')
+    run_bash('Synchronise system clock', 'hwclock --systohc --utc')
+    run_bash('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
+    run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector terminus-font wget')
+    run_bash('Setting the system font', 'setfont {SYSTEM_FONT}')
     run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
@@ -1296,10 +1303,12 @@ if __name__ == '__main__':
 
 #-- Set Locale etc  -----------------------------------------------------------
 
-    run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTEM_KEYB}" >/mnt/etc/vconsole.conf')
+    run_bash('Set the system font to "{SYSTEM_FONT}"', 'echo "FONT={SYSTEM_FONT}" >/mnt/etc/vconsole.conf')
+    run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTEM_KEYB}" >>/mnt/etc/vconsole.conf')
     run_bash('Set the hostname to {SYSTEM_HOSTNAME}', 'echo "{SYSTEM_HOSTNAME}" >/mnt/etc/hostname')
     run_bash('Set the language to {SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}', 'echo "{SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}" >>/mnt/etc/locale.gen')
     run_bash('Set the timezone to {SYSTEM_TIMEZONE}', 'ln -sf /usr/share/zoneinfo/{SYSTEM_TIMEZONE} /mnt/etc/localtime')
+    run_bash('Generate locale', 'arch-chroot /mnt local-gen')
 
 #-- Generate fstab  -----------------------------------------------------------
 
