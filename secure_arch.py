@@ -4,8 +4,8 @@
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
 # - [X] Selecting 'USER_COUNTRY'
+# - [X] Reemove 'copying files'
 # - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
-# - [ ]
 # - [ ]
 #----------------------------------------------------------------------------------------------------------------------
 
@@ -20,7 +20,6 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
-from rich.progress import Progress
 from typing import Union, Tuple, Literal
 
 # 'rich' objects
@@ -57,16 +56,13 @@ log.addHandler(handler)
 log.setLevel(logging.DEBUG)
 
 # Debugging variables
-DEBUG = True                   # If True, report on command during execution
+DEBUG = False                   # If True, report on command during execution
 STEP = False                   # If true, step one command at the time
 
 # Global Constants
 PART_1_NAME = "Primary"
 PART_2_NAME = "ESP"
 BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
-
-LINUX_ENV = "LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 KEYMAP=us DEBIAN_FRONTEND=noninteractive TERM=xterm-color"
-LINUX_PKGS = "linux-image-amd64 firmware-linux firmware-iwlwifi zstd grub-efi cryptsetup cryptsetup-initramfs btrfs-progs fdisk gdisk sudo network-manager xserver-xorg xinit lightdm xfce4 dbus-x11 thunar xfce4-terminal firefox-esr keepassxc network-manager-gnome mg"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
@@ -91,7 +87,7 @@ SYSTEM_CMD = None               # System commands lines
 SYSTEM_MODULES = None           # System modules
 
 # Deleteme
-DRIVE = '/dev/sdb'              # The device that will be made into a backup device
+#DRIVE = '/dev/sdb'              # The device that will be made into a backup device
 DRIVE_PASSWORD = '123'          # Encryption password for partitions
 USER_NAME = 'echjansen'         # User name for backup devices (no root)
 USER_PASSWORD = '123'           # User password for backup device
@@ -359,49 +355,6 @@ def find_subdirectory(source_name: str) -> Union[str, None]:
     except Exception as e:
         console.print(f"An unexpected error occurred: {e}", style='critical')
         return None
-
-def copy_file_structure(source: str, destination: str) -> None:
-    """
-    Copies the file structure (folders and files) from a source directory to a
-    destination directory, creating any missing folders in the destination.
-
-    Args:
-        source: The path to the source directory.
-        destination: The path to the destination directory.
-    """
-
-    try:
-        # Check if the source directory exists
-        if not os.path.isdir(source):
-            source = find_subdirectory(source)
-            if not source:
-                console.print(f"Error: Source directory '{source}' not found.", style='error')
-                return
-
-        # Create the destination directory if it doesn't exist
-        os.makedirs(destination, exist_ok=True)  # exist_ok=True prevents an error if the directory already exists
-
-        total_files = sum(len(files) for _, _, files in os.walk(source))
-
-        with Progress() as progress:
-            task = progress.add_task("[green]Copying files...", total=total_files)
-
-            for root, _, files in os.walk(source):
-                # Create the corresponding directory structure in the destination
-                dest_dir = os.path.join(destination, os.path.relpath(root, source))
-                os.makedirs(dest_dir, exist_ok=True)
-
-                for file in files:
-                    source_file = os.path.join(root, file)
-                    dest_file = os.path.join(dest_dir, file)
-                    try:
-                        shutil.copy2(source_file, dest_file)  # copy2 preserves metadata
-                        progress.update(task, advance=1)
-                    except Exception as e:
-                        console.print(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}", style='error')
-
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
 
 def write_line_to_file(description: str, target_file: str, line: str, mode: Literal['overwrite', 'append'] = 'append') -> None:
     """
@@ -972,6 +925,49 @@ def select_keyboard_layout_from_list(keyboards: List[str]) -> str:
             return ""
 
 
+#----------------------------------------------------------------------------------------------------------------------
+# Command functions
+#----------------------------------------------------------------------------------------------------------------------
+def copy_file_structure(source: str, destination: str) -> None:
+    """
+    Copies the file structure (folders and files) from a source directory to a
+    destination directory, creating any missing folders in the destination.
+
+    Args:
+        source: The path to the source directory.
+        destination: The path to the destination directory.
+    """
+    log.info(f'Copying file from {source} to {destination}')
+
+    try:
+        # Check if the source directory exists
+        if not os.path.isdir(source):
+            source = find_subdirectory(source)
+            if not source:
+                log.error(f"Error: Source directory '{source}' not found.", style='error')
+                return
+
+        # Create the destination directory if it doesn't exist
+        os.makedirs(destination, exist_ok=True)  # exist_ok=True prevents an error if the directory already exists
+
+        for root, _, files in os.walk(source):
+            # Create the corresponding directory structure in the destination
+            dest_dir = os.path.join(destination, os.path.relpath(root, source))
+            os.makedirs(dest_dir, exist_ok=True)
+
+            for file in files:
+                source_file = os.path.join(root, file)
+                dest_file = os.path.join(dest_dir, file)
+                try:
+                    shutil.copy2(source_file, dest_file)  # copy2 preserves metadata
+                    progress.update(task, advance=1)
+                except Exception as e:
+                    log.error(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}")
+
+    except Exception as e:
+        log.exception('An unexpected error occurred')
+        return -1, "", str(e)
+
 def run_bash(description :str, command :str, input=None, output_var=None,  **kwargs):
     '''
     Execute a bash command with optional input from stdin and return the return code, output and error
@@ -1137,12 +1133,16 @@ if __name__ == '__main__':
     else:
         console.print('No country selected.', style='critical')
 
+    console.print('\n')
+    console.print(f'Debugging ...........: [green]{DEBUG}[/]', style='info')
+    console.print(f'Step by step ........: [green]{STEP}[/]', style='info')
+
     if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
 
 #-- System Preparation and Checks  --------------------------------------------
 
-    # run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
+    run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
 
@@ -1150,7 +1150,7 @@ if __name__ == '__main__':
 
     # Write random data to the whole disk
     if not DEBUG: run_bash('Disk - Write random data to disk', 'dd=1M if=/dev/urandom of={DRIVE} || true')
-    if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DISK} | xargs -n1 wipefs --all')
+    if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DRIVE} | xargs -n1 wipefs --all')
 
     # Create partition table and name partitions
     run_bash('Partitioning - Create partition table', 'sgdisk --clear {DRIVE} --new 1::-551MiB --new 2::0 --typecode 2:ef00 {DRIVE}')
@@ -1226,7 +1226,7 @@ if __name__ == '__main__':
         if SYSTEM_GPU == 'NVIDIA'  : packages.append('vulkan-nouveau')
 
     SYSTEM_PKGS = ' '.join(packages)
-    run_bash('Installing Linux packages', 'pacstrap -K /mnt {SYSTEM_PKGS}')
+    run_bash('Installing Linux packages .... (patience)', 'pacstrap -K /mnt {SYSTEM_PKGS}')
 
 #-- Copy config files  --------------------------------------------------------
 
@@ -1270,8 +1270,9 @@ if __name__ == '__main__':
 
 #-- Configure Plymouth  -------------------------------------------------------
 
-    run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
-    run_bash('Set login defs', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /etc/login.defs")
+    # TODO - Added /mnt in front of /etc/login.defs
+    # run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
+    # run_bash('Clean login experience on TTY and SSH', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /mnt/etc/login.defs")
 
 #-- User and Group accounts  --------------------------------------------------
 
@@ -1293,7 +1294,7 @@ if __name__ == '__main__':
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
-    bash_command = f"""arch-chroot -u "{USERN_NAME}" /mnt /bin/bash -c 'mkdir /tmp/yay.$$ &&
+    bash_command = f"""arch-chroot -u "{USER_NAME}" /mnt /bin/bash -c 'mkdir /tmp/yay.$$ &&
     cd /tmp/yay.$$ &&
     curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD &&
     makepkg -si --noconfirm'
