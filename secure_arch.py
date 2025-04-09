@@ -362,37 +362,6 @@ def find_subdirectory(source_name: str) -> Union[str, None]:
         console.print(f"An unexpected error occurred: {e}", style='critical')
         return None
 
-def write_line_to_file(description: str, target_file: str, line: str, mode: Literal['overwrite', 'append'] = 'append') -> None:
-    """
-    Writes a line to a configuration file, either overwriting the existing file or appending to it.
-
-    Mimics the behavior of 'echo "line" > file' (overwrite) and 'echo "line" >> file' (append) in Bash.
-
-    Args:
-        description: Will be logged during execution
-        target_file: The path to the configuration file.
-        line:        The line to write to the file.
-        mode:        'overwrite' to replace the file content, or 'append' to add to the end. Defaults to 'append'.
-    """
-
-    try:
-        if mode == 'overwrite':
-            file_mode = 'w'  # Open for writing (overwrites existing file)
-        elif mode == 'append':
-            file_mode = 'a'  # Open for appending (creates file if it doesn't exist)
-        else:
-            console.print("Error: Invalid mode.  Must be 'overwrite' or 'append'.", style='error')
-            return
-
-        log.info(f'{description_formatted}')
-
-        with open(target_file, file_mode) as f:
-            f.write(line + '\n')  # Write the line with a newline character
-
-    except Exception as e:
-        console.print(f"Error writing to '{target_file}' (mode: {mode}): {e}", style='critical')
-
-
 def write_config_to_file(config_lines: List[str], target_file: str) -> None:
     """
     Writes a list of configuration lines to a target file, appending each line with a newline.
@@ -1341,7 +1310,7 @@ if __name__ == '__main__':
 
     command = 'cat <<EOF >/mnt/etc/mkinitcpio.conf'
     input = textwrap.dedent(f"""\
-    MODULES={SYSTEM_MODULES}
+    MODULES=({SYSTEM_MODULES})
     BINARIES=(setfont)
     FILES=()
     HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)
