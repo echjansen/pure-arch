@@ -1328,8 +1328,8 @@ if __name__ == '__main__':
 
 # -- Hardening ----------------------------------------------------------------
 
-    run_bash('Hardening /boot', 'arch-chroot /mnt chmod 700 /boot')
-    run_bash('Disabling root', 'arch-chroot /mnt passwd -dl root')
+    run_bash('Hardening /boot partition', 'arch-chroot /mnt chmod 700 /boot')
+    run_bash('Disabling root user', 'arch-chroot /mnt passwd -dl root')
 
 # -- Configuring Firejail -----------------------------------------------------
 
