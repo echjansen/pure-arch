@@ -6,7 +6,8 @@
 # - [X] Selecting 'USER_COUNTRY'
 # - [X] Reemove 'copying files'
 # - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
-# - [ ]
+# - [ ] Check font
+# - [ ] UEFI check
 #----------------------------------------------------------------------------------------------------------------------
 
 import os
@@ -532,7 +533,53 @@ def check_sudo():
     """
 
     if os.getegid() != 0:
-        console.print("Run this application with sudo privilege.", style="error")
+        console.print("Run this application with sudo privilege.", style="critical")
+        exit()
+
+def check_uefi():
+    """
+    Check that the system is running in UEFI mode (Unified Extensible Firmware Interface).
+    If not, exit.
+    """
+
+    if not os.path.exists('/sys/firmware/efi/'):
+        console.print("System is not booted in UEFI mode (likely BIOS/Legacy mode).", style='critical')
+        exit()
+
+def check_secure_boot():
+    """
+    Check that the system is running with Secure Boot
+    If not, exit.
+    """
+
+    try:
+        # Execute dmesg | grep -1 tpm
+        result = subprocess.run(
+            ['dmesg'],
+            capture_output=True,
+            text=True,
+            check=True          # Check for non-zero exit code
+        )
+        dmesg_output = result.stdout.strip()
+
+        grep_result = subprocess.run(
+            ['grep', '-i', 'tpm'],
+            input=dmesg_output,
+            capture_output=True,
+            text=True,
+            check=False          # Do Not check for non-zero exit code
+        )
+        grep_output = grep_result.stdout.strip()
+
+        if not grep_output:
+            console.print('TPM (Trusted Platform Module) not detected.', style='critical')
+            exit()
+
+    except subprocess.CalledProcessError as e:
+        console.print(f'Error executing dmesg: {e}', style='critical')
+        exit()
+    except Exception as e:
+        console.print(f'An unexpected error occurred: {e}', style='critical')
         exit()
 
 def select_drive() -> str:
@@ -1028,6 +1075,8 @@ if __name__ == '__main__':
 #-- System check  -------------------------------------------------------------
 
     check_sudo()
+    check_uefi()
+    check_secure_boot()
 
     if not SYSTEM_CPU:  SYSTEM_CPU  = get_cpu_brand()
     if not SYSTEM_GPU:  SYSTEM_GPU  = get_graphics_card_brand()
@@ -1181,7 +1230,8 @@ if __name__ == '__main__':
 ##- swap file -----------------------------------------------------------------
 
     run_bash('Swapfile creation','btrfs filesystem mkswapfile /mnt/.swap/swapfile')
-    run_bash('Swapfile make','mkswap /mnt/.swap/swapfile')
+    # Faults occasionally, and documentation indicates not necessary
+    # run_bash('Swapfile make','mkswap /mnt/.swap/swapfile')
     run_bash('Swapfile on','swapon /mnt/.swap/swapfile')
 
 #-- Install Linux Packages  ---------------------------------------------------
@@ -1308,8 +1358,8 @@ if __name__ == '__main__':
     else:
         SYSTEM_MODULES = ''
 
-    command = 'cat <<EOF >/mnt/etc/mkinitcpio.conf'
-    input = textwrap.dedent(f"""\
+    command = textwrap.dedent(f"""\
+    cat <<EOF >/mnt/etc/mkinitcpio.conf
     MODULES=({SYSTEM_MODULES})
     BINARIES=(setfont)
     FILES=()
@@ -1317,7 +1367,7 @@ if __name__ == '__main__':
     EOF
     """).strip()
 
-    run_bash('Configuring mkinitcpio', command, input=input)
+    run_bash('Configuring mkinitcpio', command)
     run_bash('Creating the initial RAM disk image', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
 
 
