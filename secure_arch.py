@@ -13,6 +13,7 @@ import os
 import shutil
 import logging
 import subprocess
+import textwrap
 from typing import List
 from rich.console import Console
 from rich.theme import Theme
@@ -1317,13 +1318,13 @@ if __name__ == '__main__':
     run_bash('Installing Aur packages', 'HOME="/home/{USER_NAME}" arch-chroot -u "{USER_NAME}" /mnt /usr/bin/yay --noconfirm -Sy {SYSTEM_PKGS}')
 
     run_bash('Remove pacman wrapper', 'mv /mnt/usr/local/bin/pacman.disable /mnt/usr/local/bin/pacman')
-    run_bash('Remove NOPASSWD sudo from users', "sed -i '$ d' /mnt/etc/sudoers'")
+    run_bash('Remove NOPASSWD sudo from users', "sed -i '$ d' /mnt/etc/sudoers")
 
 #-- Install Login -------------------------------------------------------------
 
     run_bash('Installing Login screen', 'arch-chroot /mnt plymouth-set-default-theme splash')
 
-#-- Installing Modules --------------------------------------------------------
+#-- Installing RAM Disk Image -------------------------------------------------
 
     if SYSTEM_GPU ==  'AMD':
         SYSTEM_MODULES = 'amdgpu'
@@ -1334,16 +1335,17 @@ if __name__ == '__main__':
     else:
         SYSTEM_MODULES = ''
 
-    bash_command = """cat <<EOF >/mnt/etc/mkinitcpio.conf
+    command = 'cat <<EOF >/mnt/etc/mkinitcpio.conf'
+    input = textwrap.dedent(f"""\
     MODULES={SYSTEM_MODULES}
     BINARIES=(setfont)
     FILES=()
     HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)
     EOF
-    """
+    """).strip()
 
-    run_bash('Configuring mkinitcpio', bash_command)
-    run_bash('Installing mkinitpcio', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
+    run_bash('Configuring mkinitcpio', command, input=input)
+    run_bash('Creating the initial RAM disk image', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
 
 
 # -- Generate UEFI keys, sign kernels, enroll keys ----------------------------
