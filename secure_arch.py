@@ -1044,7 +1044,7 @@ def run_bash(description :str, command :str, input=None, output_var=None,  **kwa
         log.error(f'Command: {command_formatted}')
         log.error(f'Return code: {e.returncode}')
         log.error(f'Error output: {e.stderr.strip()}')
-        if prompt.ask('Exit?', choices=['y', 'n']) == 'y':
+        if prompt.ask('Continue?', choices=['y', 'n']) == 'n':
             exit()
         return e.returncode, e.output.strip(), e.stderr.strip()
 
@@ -1201,8 +1201,8 @@ if __name__ == '__main__':
     run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
     run_bash('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/log')
     run_bash('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/tmp')
-    run_bash('Partition 1 - Mount @libvirt',           'mount --mkdir -o subvol=@libvirt,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/libvirt')
-    run_bash('Partition 1 - Mount @docker',            'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/docker')
+    run_bash('Partition 1 - Mount @var-lib-libvirt',   'mount --mkdir -o subvol=@libvirt,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/libvirt')
+    run_bash('Partition 1 - Mount @var-lib-docker',    'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/docker')
     run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-pkgs,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
 
 ##- partition 2 ---------------------------------------------------------------
@@ -1299,12 +1299,16 @@ if __name__ == '__main__':
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
-    bash_command = f"""arch-chroot -u "{USER_NAME}" /mnt /bin/bash -c 'mkdir /tmp/yay.$$ &&
-    cd /tmp/yay.$$ &&
-    curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD &&
-    makepkg -si --noconfirm'
-    """
-    run_bash('Install AUR helper', bash_command)
+    command = textwrap.dedent(f"""\
+    #!/bin/bash
+    set -e                      # Execute immediately
+    arch-chroot -u {USER_NAME} /mnt /bin/bash -c mkdir /tmp/yay.$$
+    arch-chroot -u {USER_NAME} /mnt /bin/bash -c cd /tmp/yay.$$
+    arch-chroot -u {USER_NAME} /mnt /bin/bash -c curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD
+    arch-chroot -u {USER_NAME} /mnt /bin/bash -c makepkg -si --noconfirm
+    """).strip()
+
+    run_bash('Install AUR helper', command)
 
 #-- Install Aur Packages  -----------------------------------------------------
 
@@ -1406,8 +1410,9 @@ if __name__ == '__main__':
 
 # -- Cleaning up --------------------------------------------------------------
 
-    run_bash('Partition X - Umount', 'umount --recursive /mnt')
-    run_bash('Partition 1 - Close {PART_1_UUID}', 'cryptsetup luksClose {PART_1_UUID}')
+    run_bash('Swapfile off','swapoff /mnt/.swap/swapfile')
+    run_bash('Partitions - Umount', 'umount --recursive /mnt')
+    run_bash('Partition 1 - Close Luks', 'cryptsetup luksClose {PART_1_UUID}')
 
 # -- Done ---------------------------------------------------------------------
 
