@@ -5,9 +5,9 @@
 # Todos:
 # - [X] Selecting 'USER_COUNTRY'
 # - [X] Reemove 'copying files'
-# - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
+# - [X] UEFI check
 # - [ ] Check font
-# - [ ] UEFI check
+# - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
 #----------------------------------------------------------------------------------------------------------------------
 
 import os
@@ -22,7 +22,7 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
-from typing import Union, Tuple, Literal
+from typing import Union, Tuple
 
 # 'rich' objects
 theme = Theme({
@@ -532,8 +532,10 @@ def check_sudo():
     If not, exit.
     """
 
-    if os.getegid() != 0:
-        console.print("Run this application with sudo privilege.", style="critical")
+    if os.getegid() == 0:
+        log.info("Script is running with sudo privileges.")
+    else:
+        log.critical("Application must run with sudo privileges.")
         exit()
 
 def check_uefi():
@@ -542,8 +544,10 @@ def check_uefi():
     If not, exit.
     """
 
-    if not os.path.exists('/sys/firmware/efi/'):
-        console.print("System is not booted in UEFI mode (likely BIOS/Legacy mode).", style='critical')
+    if os.path.exists('/sys/firmware/efi/'):
+        log.info("System is booted in UEFI mode.")
+    else:
+        log.critical("System is NOT booted in UEFI mode (likely BIOS/Legacy mode).")
         exit()
 
 def check_secure_boot():
@@ -571,8 +575,10 @@ def check_secure_boot():
         )
         grep_output = grep_result.stdout.strip()
 
-        if not grep_output:
-            console.print('TPM (Trusted Platform Module) not detected.', style='critical')
+        if grep_output:
+            log.info('TPM (Trusted Platform Module) detected.')
+        else:
+            log.critical('TPM (Trusted Platform Module) not detected.')
             exit()
 
     except subprocess.CalledProcessError as e:
@@ -989,7 +995,7 @@ def copy_file_structure(source: str, destination: str) -> None:
         log.exception('An unexpected error occurred')
         return -1, "", str(e)
 
-def run_bash(description :str, command :str, input=None, output_var=None,  **kwargs):
+def run_bash(description :str, command :str, input=None, output_var=None, check_returncode: bool=True,  **kwargs):
     '''
     Execute a bash command with optional input from stdin and return the return code, output and error
     '''
@@ -1045,7 +1051,7 @@ def run_bash(description :str, command :str, input=None, output_var=None,  **kwa
 
     try:
         # Run the bash command
-        result = subprocess.run(command_formatted, shell=True, check=True, stdout=subprocess.PIPE,
+        result = subprocess.run(command_formatted, shell=True, check=check_returncode, stdout=subprocess.PIPE,
                                 input=input_formatted, stderr=subprocess.PIPE, text=True)
 
         # Set return variable if specified
@@ -1073,20 +1079,28 @@ if __name__ == '__main__':
     console.clear()
 
 #-- System check  -------------------------------------------------------------
+    console.print(Rule("System Check"), style='success')
 
+    # Must be in place for script to work
     check_sudo()
     check_uefi()
     check_secure_boot()
 
-    if not SYSTEM_CPU:  SYSTEM_CPU  = get_cpu_brand()
-    if not SYSTEM_GPU:  SYSTEM_GPU  = get_graphics_card_brand()
-    if not SYSTEM_VIRT: SYSTEM_VIRT = get_virtualizer().capitalize()
+    # Unmount devices from potential previous attempts that failed
+    run_bash('Swapfiles deactivated','swapoff -a', check_returncode=False)
+    run_bash('Partitions unmounted', 'umount --recursive /mnt', check_returncode=False)
+    run_bash('Encrypted drives closed', 'cryptsetup luksClose {PART_1_UUID}', check_returncode=False)
 
 #-- User input ----------------------------------------------------------------
 
     console.print(Rule("User selections for installation"), style='success')
 
-    # Get installation variables
+    # Get system details
+    if not SYSTEM_CPU:  SYSTEM_CPU  = get_cpu_brand()
+    if not SYSTEM_GPU:  SYSTEM_GPU  = get_graphics_card_brand()
+    if not SYSTEM_VIRT: SYSTEM_VIRT = get_virtualizer().capitalize()
+
+    # Get user options
     if not DRIVE: DRIVE = select_drive()
     if not USER_NAME: USER_NAME = select_username()
     if not USER_PASSWORD: USER_PASSWORD = select_password('User', min_length=3)
@@ -1429,7 +1443,7 @@ if __name__ == '__main__':
 
 # -- Cleaning up --------------------------------------------------------------
 
-    run_bash('Swapfile off','swapoff /mnt/.swap/swapfile')
+    run_bash('Swapfile off','swapoff -a')
     run_bash('Partitions - Umount', 'umount --recursive /mnt')
     run_bash('Partition 1 - Close Luks', 'cryptsetup luksClose {PART_1_UUID}')
 
