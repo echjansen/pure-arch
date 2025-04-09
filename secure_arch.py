@@ -6,11 +6,13 @@
 # - [X] Selecting 'USER_COUNTRY'
 # - [X] Reemove 'copying files'
 # - [X] UEFI check
-# - [ ] Check font
-# - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
+# - [X] Check font
 # - [ ] Run  as /bin/sh or /bin/bash
+# - [ ] install_igpu_drivers missing
+# - [ ] wipefs is not correct
+# - [ ] dd does not work correct
+# - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
 #----------------------------------------------------------------------------------------------------------------------
-
 import os
 import shutil
 import logging
@@ -68,7 +70,7 @@ DEBUG = False                  # If True, report on command during execution
 STEP = False                   # If true, step one command at the time
 
 # Global Constants
-SYSTEM_FONT = 'ter-716n'       # System font ('ter-132n' , 'ter-716n')
+SYSTEM_FONT = 'ter-132n'       # System font ('ter-132n' , 'ter-716n')
 PART_1_NAME = "Primary"
 PART_2_NAME = "ESP"
 BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
@@ -1192,8 +1194,9 @@ if __name__ == '__main__':
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
 
     # Write random data to the whole disk
-    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd=1M if=/dev/urandom of={DRIVE} || true')
-    if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DRIVE} | xargs -n1 wipefs --all')
+    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd=1M if=/dev/urandom of={DRIVE}')
+    # TODO if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DRIVE} | xargs -n1 wipefs --all')
+    if not DEBUG: run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
 
     # Create partition table and name partitions
     run_bash('Partitioning - Create partition table', 'sgdisk --clear {DRIVE} --new 1::-551MiB --new 2::0 --typecode 2:ef00 {DRIVE}')
@@ -1308,7 +1311,7 @@ if __name__ == '__main__':
     run_bash('Set the hostname to {SYSTEM_HOSTNAME}', 'echo "{SYSTEM_HOSTNAME}" >/mnt/etc/hostname')
     run_bash('Set the language to {SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}', 'echo "{SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}" >>/mnt/etc/locale.gen')
     run_bash('Set the timezone to {SYSTEM_TIMEZONE}', 'ln -sf /usr/share/zoneinfo/{SYSTEM_TIMEZONE} /mnt/etc/localtime')
-    run_bash('Generate locale', 'arch-chroot /mnt local-gen')
+    run_bash('Generate locale', 'arch-chroot /mnt locale-gen')
 
 #-- Generate fstab  -----------------------------------------------------------
 
@@ -1340,14 +1343,23 @@ if __name__ == '__main__':
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
+    # command = textwrap.dedent(f"""\
+    # #!/bin/bash
+    # set -e                      # Execute immediately
+    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c mkdir /tmp/yay.$$
+    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c cd /tmp/yay.$$
+    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD
+    # arch-chroot -u {USER_NAME} /mnt /bin/bash -c makepkg -si --noconfirm
+    # """).strip()
+
     command = textwrap.dedent(f"""\
     #!/bin/bash
-    set -e                      # Execute immediately
-    arch-chroot -u {USER_NAME} /mnt /bin/bash -c mkdir /tmp/yay.$$
-    arch-chroot -u {USER_NAME} /mnt /bin/bash -c cd /tmp/yay.$$
-    arch-chroot -u {USER_NAME} /mnt /bin/bash -c curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD
-    arch-chroot -u {USER_NAME} /mnt /bin/bash -c makepkg -si --noconfirm
-    """).strip()
+    arch-chroot /mnt /bin/bash -c '
+    su {USER_NAME} -c "
+    mkdir /tmp/yay.$$ &&
+    curl \"https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin\" -o PKGBUILD &&
+    makepkg -si --noconfirm"
+    '""").strip()
 
     run_bash('Install AUR helper', command)
 
