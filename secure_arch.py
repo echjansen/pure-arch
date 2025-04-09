@@ -7,10 +7,10 @@
 # - [X] Reemove 'copying files'
 # - [X] UEFI check
 # - [X] Check font
+# - [X] wipefs is not correct
+# - [X] dd does not work correct
 # - [ ] Run  as /bin/sh or /bin/bash
 # - [ ] install_igpu_drivers missing
-# - [ ] wipefs is not correct
-# - [ ] dd does not work correct
 # - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
 #----------------------------------------------------------------------------------------------------------------------
 import os
@@ -92,6 +92,7 @@ SYSTEM_COUNTRY_CODE = None      # System country code ('au')
 SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
 SYSTEM_CPU = None               # System CPU brand (Intel, AMD, etc)
 SYSTEM_GPU = None               # System GPU brand (Intel, AMD, NVIDIA, etc)
+SYSTEM_GPU_INT = None           # System GPU is integrated in CPU
 SYSTEM_VIRT = None              # System virtualizer (if any) (oracle, vmware, docker, etc)
 SYSTEM_PKGS = None              # System packages to install
 SYSTEM_CMD = None               # System commands lines
@@ -1117,6 +1118,7 @@ if __name__ == '__main__':
     # Get system details
     if not SYSTEM_CPU:  SYSTEM_CPU  = get_cpu_brand()
     if not SYSTEM_GPU:  SYSTEM_GPU  = get_graphics_card_brand()
+    if not SYSTEM_GPU_INT: SYSTEM_GPU_INT = prompt.ask('[yellow]Is the GPU integrated in the CPU?[/]', choices=['y','n'])
     if not SYSTEM_VIRT: SYSTEM_VIRT = get_virtualizer().capitalize()
 
     # Get user options
@@ -1209,7 +1211,7 @@ if __name__ == '__main__':
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
 
     # Write random data to the whole disk
-    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}')
+    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}', check_returncode=False)
     # TODO if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DRIVE} | xargs -n1 wipefs --all')
     if not DEBUG: run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
 
@@ -1298,8 +1300,8 @@ if __name__ == '__main__':
 
     run_bash('Copy mirror list', 'cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/')
     run_bash('Patch pacman configuration -colours', 'sed -i "s/#Color/Color/g" /mnt/etc/pacman.conf')
-    run_bash('Patch qemu configuration - user', 'sed -i "s/username_placeholder/$user/g" /mnt/etc/libvirt/qemu.conf')
-    run_bash('Patch tty configuration - user', 'sed -i "s/username_placeholder/$user/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
+    run_bash('Patch qemu configuration - user', 'sed -i "s/username_placeholder/{USER_NAME}/g" /mnt/etc/libvirt/qemu.conf')
+    run_bash('Patch tty configuration - user', 'sed -i "s/username_placeholder/(USER_NAME)/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
     run_bash('Patch shell - dash', 'ln -sfT dash /mnt/usr/bin/sh')
 
 #-- Write Kernel Command Line  ------------------------------------------------
@@ -1340,30 +1342,33 @@ if __name__ == '__main__':
 
 #-- User and Group accounts  --------------------------------------------------
 
+    # Create user (USER_NAME), set shell to Bourne Shell (dash), create home folder
     run_bash('Add user account for {USER_NAME}', 'arch-chroot /mnt useradd -m -s /bin/sh {USER_NAME}')
+    # Force creation of system groups (for services)
     run_bash('Create group wheel', 'arch-chroot /mnt groupadd -rf wheel')
     run_bash('Create group audit', 'arch-chroot /mnt groupadd -rf audit')
     run_bash('Create group libvirt', 'arch-chroot /mnt groupadd -rf libvirt')
     run_bash('Create group firejail', 'arch-chroot /mnt groupadd -rf firejail')
     run_bash('Create group allow-internet', 'arch-chroot /mnt groupadd -rf allow-internet')
+    # Add user (USER_NAME) to system groups
     run_bash('Add {USER_NAME} to wheel', 'arch-chroot /mnt gpasswd -a {USER_NAME} wheel')
     run_bash('Add {USER_NAME} to audit', 'arch-chroot /mnt gpasswd -a {USER_NAME} audit')
     run_bash('Add {USER_NAME} to libvirt', 'arch-chroot /mnt gpasswd -a {USER_NAME} libvirt')
     run_bash('Add {USER_NAME} to firejail', 'arch-chroot /mnt gpasswd -a {USER_NAME} firejail')
+    # Set user (USER_NAME) password
     run_bash('Set password for {USER_NAME}', 'arch-chroot /mnt chpasswd', input='{USER_NAME}:{USER_PASSWORD}\n')
-    # run_bash('Linux - Set password {USER_NAME}', 'chroot /mnt bash --login -c "chpasswd"', input='{USER_NAME}:{USER_PASSWORD}\n')
 
 #-- Install AUR helper --------------------------------------------------------
 
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
-    command = textwrap.dedent(f"""\
-    arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
-    cd /tmp/yay.$$ &&
-    curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD &&
-    -c makepkg -si --noconfirm'
-    """).strip()
+    # command = textwrap.dedent(f"""\
+    # arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
+    # cd /tmp/yay.$$ &&
+    # curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD &&
+    # -c makepkg -si --noconfirm'
+    # """).strip()
 
     # command = textwrap.dedent(f"""\
     # #!/bin/bash
@@ -1374,10 +1379,7 @@ if __name__ == '__main__':
     # makepkg -si --noconfirm"
     # '""").strip()
 
-    # arch-chroot -u "$user" /mnt /bin/bash -c 'mkdir /tmp/yay.$$ && \
-    #                                           cd /tmp/yay.$$ && \
-    #                                           curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && \
-    #                                           makepkg -si --noconfirm'
+    command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
 
     run_bash('Install AUR helper', command)
 
@@ -1426,7 +1428,7 @@ if __name__ == '__main__':
 # -- Generate UEFI keys, sign kernels, enroll keys ----------------------------
 
     run_bash('Configure Linux Hardened', "echo 'KERNEL=linux-hardened' >/mnt/etc/arch-secure-boot/config")
-    run_bash('Insatll Linux Hardened', 'arch-chroot /mnt arch-secure-boot initial-setup')
+    run_bash('Install Linux Hardened', 'arch-chroot /mnt arch-secure-boot initial-setup')
 
 # -- Hardening ----------------------------------------------------------------
 
