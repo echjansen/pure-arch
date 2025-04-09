@@ -960,7 +960,6 @@ def copy_file_structure(source: str, destination: str) -> None:
                 dest_file = os.path.join(dest_dir, file)
                 try:
                     shutil.copy2(source_file, dest_file)  # copy2 preserves metadata
-                    progress.update(task, advance=1)
                 except Exception as e:
                     log.error(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}")
 
