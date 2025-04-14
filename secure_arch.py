@@ -25,7 +25,7 @@ from rich.prompt import Prompt
 from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 # 'rich' objects
 theme = Theme({
@@ -115,6 +115,26 @@ SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 #----------------------------------------------------------------------------------------------------------------------
 # Supporting functions
 #----------------------------------------------------------------------------------------------------------------------
+def ask_yes_no(prompt_text: str) -> Optional[bool]:
+    """
+    Asks the user a yes/no question and returns True for "y" and False for "n".
+
+    Args:
+        prompt_text: The question to ask the user.
+
+    Returns:
+        True if the user enters "y" (case-insensitive), False if the user enters "n" (case-insensitive),
+        or None if the user enters an invalid response.
+    """
+    while True:
+        response = Prompt.ask("[yellow]" + prompt_text + "[/]", choices=["y", "n"]).lower() # Force lowercase
+        if response == "y":
+            return True
+        elif response == "n":
+            return False
+        else:
+            print("Invalid input. Please enter 'y' or 'n'.")
+
 def get_cpu_brand() -> str:
     """
     Uses the 'lscpu' command to determine the CPU brand (Intel, AMD, etc.).
