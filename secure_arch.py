@@ -1254,7 +1254,7 @@ if __name__ == '__main__':
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
 
     # Write random data to the whole disk
-    if not DEBUG: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}', check_returncode=False)
+    if SYSTEM_WIPE_DISK: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}', check_returncode=False)
     run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
 
     # Create partition table and name partitions
