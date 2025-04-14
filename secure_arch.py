@@ -97,6 +97,7 @@ SYSTEM_VIRT = None              # System virtualizer (if any) (oracle, vmware, d
 SYSTEM_PKGS = None              # System packages to install
 SYSTEM_CMD = None               # System commands lines
 SYSTEM_MODULES = None           # System modules
+SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
 
 # Deleteme
 #DRIVE = '/dev/sdb'              # The device that will be made into a backup device
@@ -1152,6 +1153,7 @@ if __name__ == '__main__':
     if not SYSTEM_KEYB: SYSTEM_KEYB = select_keyboard_layout()
     if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = select_timezone()
     if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
+    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = ask_yes_no('Write random data to disk (lengthy)')
 
 #-- User validation -----------------------------------------------------------
 
@@ -1214,6 +1216,7 @@ if __name__ == '__main__':
     console.print('\n')
     console.print(f'Debugging ...........: [green]{DEBUG}[/]', style='info')
     console.print(f'Step by step ........: [green]{STEP}[/]', style='info')
+    console.print(f'Wipe entire disk ....: [green]{SYSTEM_WIPE_DISK}[/]', style='info')
 
     if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
@@ -1232,8 +1235,7 @@ if __name__ == '__main__':
 
     # Write random data to the whole disk
     if not DEBUG: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}', check_returncode=False)
-    # TODO if not DEBUG: run_bash('Disk - Remove file system bytes','lsblk -plnx size -o name {DRIVE} | xargs -n1 wipefs --all')
-    if not DEBUG: run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
+    run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
 
     # Create partition table and name partitions
     run_bash('Partitioning - Create partition table', 'sgdisk --clear {DRIVE} --new 1::-551MiB --new 2::0 --typecode 2:ef00 {DRIVE}')
