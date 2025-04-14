@@ -74,6 +74,7 @@ SYSTEM_FONT = 'ter-132n'       # System font ('ter-132n' , 'ter-716n')
 PART_1_NAME = "Primary"
 PART_2_NAME = "ESP"
 BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
+SYSTEM_LOG_FILE ='install.log' # Set to None to disable or with a string "install.log"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
@@ -1090,10 +1091,29 @@ def run_bash(description :str, command :str, input=None, output_var=None, check_
     log.info(f'{description_formatted}')
     if DEBUG: log.debug(f'{command_formatted}')
 
+    # Logging to file
+    if SYSTEM_LOG_FILE:
+        try:
+            with open(SYSTEM_LOG_FILE, "a") as log_file:
+                log_file.write(f"Description: {description_formatted}\n")
+                log_file.write(f"Command: {command_formatted}\n")
+        except Exception as e:
+            console.print(f"Error writing to log file: {e}", style='error')
+
     try:
         # Run the bash command
         result = subprocess.run(command_formatted, shell=True, check=check_returncode, stdout=subprocess.PIPE,
                                 input=input_formatted, stderr=subprocess.PIPE, text=True)
+
+        # Log command results
+        if SYSTEM_LOG_FILE:
+            try:
+                with open(SYSTEM_LOG_FILE, "a") as log_file:
+                    log_file.write(f"Return Code: {result.returncode}\n")
+                    log_file.write(f"Stdout: {result.stdout.strip()}\n")
+                    log_file.write(f"Stderr: {result.stderr.strip()}\n")
+            except Exception as e:
+                console.print(f"Error writing to log file: {e}", style='error')
 
         # Set return variable if specified
         if output_var in globals():
@@ -1385,23 +1405,14 @@ if __name__ == '__main__':
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
-    # command = textwrap.dedent(f"""\
-    # arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
-    # cd /tmp/yay.$$ &&
-    # curl 'https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin' -o PKGBUILD &&
-    # -c makepkg -si --noconfirm'
-    # """).strip()
+    command = textwrap.dedent(f"""\
+    arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
+    cd /tmp/yay.$$ &&
+    curl https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin -o PKGBUILD &&
+    -c makepkg -si --noconfirm'
+    """).strip()
 
-    # command = textwrap.dedent(f"""\
-    # #!/bin/bash
-    # arch-chroot /mnt /bin/bash -c '
-    # su {USER_NAME} -c "
-    # mkdir /tmp/yay.$$ &&
-    # curl \"https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin\" -o PKGBUILD &&
-    # makepkg -si --noconfirm"
-    # '""").strip()
-
-    command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
+    # command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
 
     run_bash('Install AUR helper', command)
 
