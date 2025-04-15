@@ -17,7 +17,6 @@ import os
 import shutil
 import logging
 import subprocess
-import textwrap
 from typing import List
 from rich.console import Console
 from rich.theme import Theme
@@ -671,7 +670,7 @@ def select_drive() -> str:
 
             except subprocess.CalledProcessError:
                 device_models[name] = "Unknown Model"
-            except Exception as e:
+            except Exception:
                 device_models[name] = "Unknown Model"
 
 
@@ -1515,6 +1514,13 @@ if __name__ == '__main__':
     run_bash('Configure systemd user service - pipewire', 'arch-chroot /mnt systemctl --global enable pipewire')
     run_bash('Configure systemd user service - wireplumber', 'arch-chroot /mnt systemctl --global enable wireplumber')
     run_bash('Configure systemd user service - gammastep', 'arch-chroot /mnt systemctl --global enable gammastep')
+
+# -- Installing dotfiles  -----------------------------------------------------
+
+
+    command = f"""HOME='/home/{USER_NAME}' arch-chroot -u {USER_NAME} /mnt /bin/bash -c 'cd && git clone https://github.com/echjansen/.dotfiles && .dotfiles/install.sh'"""
+
+    run_bash('Install dotfiles ....(patience)', command)
 
 # -- Cleaning up --------------------------------------------------------------
 
