@@ -6,3 +6,6 @@ arch-secure-boot
 # More themes: https://github.com/adi1090x/plymouth-themes
 plymouth
 plymouth-theme-splash-git
+
+# Themes
+arc-gtk-theme

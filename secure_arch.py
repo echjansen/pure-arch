@@ -1379,8 +1379,8 @@ if __name__ == '__main__':
 #-- Configure Plymouth  -------------------------------------------------------
 
     # TODO - Added /mnt in front of /etc/login.defs
-    run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
-    run_bash('Clean login experience on TTY and SSH', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /mnt/etc/login.defs")
+    # run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
+    # run_bash('Clean login experience on TTY and SSH', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /mnt/etc/login.defs")
 
 #-- User and Group accounts  --------------------------------------------------
 
@@ -1425,7 +1425,7 @@ if __name__ == '__main__':
         if SYSTEM_GPU == 'NVIDIA'  : packages.append('nouveau-fw')
 
     SYSTEM_PKGS = ' '.join(packages)
-    run_bash('Installing Aur packages', 'HOME="/home/{USER_NAME}" arch-chroot -u "{USER_NAME}" /mnt /usr/bin/yay --noconfirm -Sy {SYSTEM_PKGS}')
+    run_bash('Installing Aur packages ....(patience)', 'HOME="/home/{USER_NAME}" arch-chroot -u "{USER_NAME}" /mnt /usr/bin/yay --noconfirm -Sy {SYSTEM_PKGS}')
 
     run_bash('Remove pacman wrapper', 'mv /mnt/usr/local/bin/pacman.disable /mnt/usr/local/bin/pacman')
     run_bash('Remove NOPASSWD sudo from users', "sed -i '$ d' /mnt/etc/sudoers")

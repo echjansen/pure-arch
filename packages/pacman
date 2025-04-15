@@ -57,27 +57,27 @@ lsof
 nvtop                        # htop equivalent for GPUs
 
 # # Desktop environment
-# sway
-# swaylock
-# swayidle
-# swaybg
-# kanshi # Monitors management
-# xdg-desktop-portal-wlr # Enable screen sharing capabilites
-# xdg-desktop-portal-gtk # File chooser and others
-# flameshot # Take screenshots
-# grim # flameshot dependency for Wayland
-# foot # Terminal emulator
-# wl-clipboard
-# bemenu-wayland
-# python-i3ipc # Interact with Sway using Python
-# python-psutil # status-bar requirement
-# libnotify # notify-send
-# qt5-wayland
-# qt6-wayland
-# slurp # Select monitor region
-# brightnessctl # Control monitor brightness
-# gammastep # decrease blue light during the night
-# playerctl # control various media players
+sway
+swaylock
+swayidle
+swaybg
+kanshi # Monitors management
+xdg-desktop-portal-wlr # Enable screen sharing capabilites
+xdg-desktop-portal-gtk # File chooser and others
+flameshot # Take screenshots
+grim # flameshot dependency for Wayland
+foot # Terminal emulator
+wl-clipboard
+bemenu-wayland
+python-i3ipc # Interact with Sway using Python
+python-psutil # status-bar requirement
+libnotify # notify-send
+qt5-wayland
+qt6-wayland
+slurp # Select monitor region
+brightnessctl # Control monitor brightness
+gammastep # decrease blue light during the night
+playerctl # control various media players
 
 # Basic services
 pipewire
@@ -90,41 +90,40 @@ openssh
 dbus-broker # Improved DBUS implementation (performance and security)
 
 # Fonts
-# ttf-fantasque-nerd
-# noto-fonts-emoji
-# terminus-font # TTY font
+ttf-fantasque-nerd
+noto-fonts-emoji
+terminus-font # TTY font
 
 # Themes
-# arc-gtk-theme
-# papirus-icon-theme
+papirus-icon-theme
 
 # Dev
-# neovim
-# git
-# lazygit
-# rustup
-# rust-analyzer
-# clang
-# ipython
-# python-pip
-# man-db
-# man-pages
-# npm # for nvim plugins
+neovim
+git
+lazygit
+rustup
+rust-analyzer
+clang
+ipython
+python-pip
+man-db
+man-pages
+npm # for nvim plugins
 
 # Debugging
-# gdb
-# pwndbg
-# strace
+gdb
+pwndbg
+strace
 
 # File viewers/editors
-# zathura
-# zathura-pdf-poppler
-# swayimg
-# mpv
-# gimp
-# imagemagick
-# tree
-# fzf
+zathura
+zathura-pdf-poppler
+swayimg
+mpv
+gimp
+imagemagick
+tree
+fzf
 
 # CLI
 zsh
