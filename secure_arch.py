@@ -1127,11 +1127,14 @@ def run_bash(description :str, command :str, input=None, output_var=None, check_
         log.error(f'Command: {command_formatted}')
         log.error(f'Return code: {e.returncode}')
         log.error(f'Error output: {e.stderr.strip()}')
-        if prompt.ask('Continue?', choices=['y', 'n']) == 'n':
+        if prompt.ask('Error occurred, continue?', choices=['y', 'n']) == 'n':
             exit()
         return e.returncode, e.output.strip(), e.stderr.strip()
 
     except Exception as e:
+        log.error(f'Command: {command_formatted}')
+        if prompt.ask('Exception occurred, continue?', choices=['y', 'n']) == 'n':
+            exit()
         log.exception('An unexpected error occurred')
         return -1, "", str(e)
 
