@@ -1,16 +1,36 @@
 #----------------------------------------------------------------------------------------------------------------------
+# Arch Linux installation
+#
+# Bootable USB:
+# - [Download](https://archlinux.org/download/) ISO and GPG files
+# - Verify the ISO file: `$ pacman-key -v archlinux-<version>-dual.iso.sig`
+# - Create a bootable USB with: `# dd if=archlinux*.iso of=/dev/sdX && sync`
+#
+# UEFI setup:
+#
+# - Set boot mode to UEFI, disable Legacy mode entirely (checked)
+# - Delete preloaded OEM keys for Secure Boot, allow custom ones.
+# - Temporarily disable Secure Boot.
+# - Make sure a strong UEFI administrator password is set.
+# - Set SATA operation to AHCI mode.
+#
+# Run installation:
+#
+# - Connect to wifi via: `# iwctl station wlan0 connect WIFI-NETWORK`
+# - Run:
+#   pacman -Sy
+#   pacman -S git python-rich
+#   git clone https://github.com/echjansen/pure-arch
+#   cd pure-arch
+#   python secure_arch.py
+#----------------------------------------------------------------------------------------------------------------------
 # Goals:
 # - Use python script to install Arch Linux
+# - Secure the OS but leave it workable
+# - Start necessary background services (that are often forgotten)
+# - Report on 'misbehaviour'
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - [X] Selecting 'USER_COUNTRY'
-# - [X] Reemove 'copying files'
-# - [X] UEFI check
-# - [X] Check font
-# - [X] wipefs is not correct
-# - [X] dd does not work correct
-# - [ ] Run  as /bin/sh or /bin/bash
-# - [ ] install_igpu_drivers missing
 # - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
 #----------------------------------------------------------------------------------------------------------------------
 import os
@@ -25,6 +45,55 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
 from typing import Union, Tuple, Optional
+
+# Debugging variables
+DEBUG = False                  # If True, report on command during execution
+STEP = False                   # If true, step one command at the time
+
+# Global Constants
+SYSTEM_FONT = 'ter-132n'       # System font ('ter-132n' , 'ter-716n')
+PART_1_NAME = "Primary"
+PART_2_NAME = "ESP"
+BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
+SYSTEM_LOG_FILE ='install.log' # Set to None to disable or with a string "install.log"
+
+# Global Variables
+DRIVE = None                    # The device that will be made into a backup device
+DRIVE_PASSWORD = None           # Encryption password for partitions
+PART_1_UUID = None              # UUID of partition 1
+PART_2_UUID = None              # UUID of partition 2
+USER_NAME = None                # User name for backup devices (no root)
+USER_PASSWORD = None            # User password for backup device
+LUKS_PASSWORD = None            # Luks password for drive(s)
+SYSTEM_HOSTNAME = None          # System hostname
+SYSTEM_LOCALE = None            # System locale ('en_US')
+SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
+SYSTEM_KEYB = None              # System keyboard layout
+SYSTEM_COUNTRY = None           # System country ('Australia')
+SYSTEM_COUNTRY_CODE = None      # System country code ('au')
+SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
+SYSTEM_CPU = None               # System CPU brand (Intel, AMD, etc)
+SYSTEM_GPU = None               # System GPU brand (Intel, AMD, NVIDIA, etc)
+SYSTEM_GPU_INT = None           # System GPU is integrated in CPU
+SYSTEM_VIRT = None              # System virtualizer (if any) (oracle, vmware, docker, etc)
+SYSTEM_PKGS = None              # System packages to install
+SYSTEM_CMD = None               # System commands lines
+SYSTEM_MODULES = None           # System modules for mkinitcpio
+SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
+
+# Configure me or leave commented out
+# DRIVE = '/dev/sdb'              # The device that will be made into a backup device
+# DRIVE_PASSWORD = '123'          # Encryption password for partitions
+# USER_NAME = 'echjansen'         # User name for backup devices (no root)
+# USER_PASSWORD = '123'           # User password for backup device
+# LUKS_PASSWORD = '123'           # Luks password for drive(s)
+# SYSTEM_HOSTNAME = 'archlinux'   # System host name
+# SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
+# SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
+# SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
+# SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
+# SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
+# SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 # 'rich' objects
 theme = Theme({
@@ -63,55 +132,6 @@ handler.setFormatter(CustomFormatter())
 log = logging.getLogger("rich")
 log.setLevel(logging.INFO)
 log.addHandler(handler)
-
-# Debugging variables
-DEBUG = False                  # If True, report on command during execution
-STEP = False                   # If true, step one command at the time
-
-# Global Constants
-SYSTEM_FONT = 'ter-132n'       # System font ('ter-132n' , 'ter-716n')
-PART_1_NAME = "Primary"
-PART_2_NAME = "ESP"
-BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
-SYSTEM_LOG_FILE ='install.log' # Set to None to disable or with a string "install.log"
-
-# Global Variables
-DRIVE = None                    # The device that will be made into a backup device
-DRIVE_PASSWORD = None           # Encryption password for partitions
-PART_1_UUID = None              # UUID of partition 1
-PART_2_UUID = None              # UUID of partition 2
-USER_NAME = None                # User name for backup devices (no root)
-USER_PASSWORD = None            # User password for backup device
-LUKS_PASSWORD = None            # Luks password for drive(s)
-SYSTEM_HOSTNAME = None          # System hostname
-SYSTEM_LOCALE = None            # System locale ('en_US')
-SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
-SYSTEM_KEYB = None              # System keyboard layout
-SYSTEM_COUNTRY = None           # System country ('Australia')
-SYSTEM_COUNTRY_CODE = None      # System country code ('au')
-SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
-SYSTEM_CPU = None               # System CPU brand (Intel, AMD, etc)
-SYSTEM_GPU = None               # System GPU brand (Intel, AMD, NVIDIA, etc)
-SYSTEM_GPU_INT = None           # System GPU is integrated in CPU
-SYSTEM_VIRT = None              # System virtualizer (if any) (oracle, vmware, docker, etc)
-SYSTEM_PKGS = None              # System packages to install
-SYSTEM_CMD = None               # System commands lines
-SYSTEM_MODULES = None           # System modules
-SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
-
-# Deleteme
-#DRIVE = '/dev/sdb'              # The device that will be made into a backup device
-DRIVE_PASSWORD = '123'          # Encryption password for partitions
-USER_NAME = 'echjansen'         # User name for backup devices (no root)
-USER_PASSWORD = '123'           # User password for backup device
-LUKS_PASSWORD = '123'           # Luks password for drive(s)
-SYSTEM_HOSTNAME = 'archlinux'   # System host name
-SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
-SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
-SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
-SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
-SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
-SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 #----------------------------------------------------------------------------------------------------------------------
 # Supporting functions
@@ -1166,6 +1186,7 @@ if __name__ == '__main__':
 
     # Get user options
     if not DRIVE: DRIVE = select_drive()
+    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = ask_yes_no('Write random data to disk (lengthy)')
     if not USER_NAME: USER_NAME = select_username()
     if not USER_PASSWORD: USER_PASSWORD = select_password('User', min_length=3)
     if not LUKS_PASSWORD: LUKS_PASSWORD = select_password('Luks', min_length=3)
@@ -1175,7 +1196,6 @@ if __name__ == '__main__':
     if not SYSTEM_KEYB: SYSTEM_KEYB = select_keyboard_layout()
     if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = select_timezone()
     if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
-    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = ask_yes_no('Write random data to disk (lengthy)')
 
 #-- User validation -----------------------------------------------------------
 
