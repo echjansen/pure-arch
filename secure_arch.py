@@ -1248,7 +1248,7 @@ if __name__ == '__main__':
     run_bash('Synchronise system clock', 'hwclock --systohc --utc')
     run_bash('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
     run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector terminus-font wget')
-    run_bash('Setting the system font', 'setfont {SYSTEM_FONT}')
+    # run_bash('Setting the system font', 'setfont {SYSTEM_FONT}')
     run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
@@ -1379,8 +1379,8 @@ if __name__ == '__main__':
 #-- Configure Plymouth  -------------------------------------------------------
 
     # TODO - Added /mnt in front of /etc/login.defs
-    # run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
-    # run_bash('Clean login experience on TTY and SSH', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /mnt/etc/login.defs")
+    run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
+    run_bash('Clean login experience on TTY and SSH', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /mnt/etc/login.defs")
 
 #-- User and Group accounts  --------------------------------------------------
 
@@ -1405,14 +1405,14 @@ if __name__ == '__main__':
     run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
     run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
-    command = textwrap.dedent(f"""\
-    arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
-    cd /tmp/yay.$$ &&
-    curl https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin -o PKGBUILD &&
-    -c makepkg -si --noconfirm'
-    """).strip()
+    # command = textwrap.dedent(f"""\
+    # arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
+    # cd /tmp/yay.$$ &&
+    # curl https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin -o PKGBUILD &&
+    # -c makepkg -si --noconfirm'
+    # """).strip()
 
-    # command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
+    command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
 
     run_bash('Install AUR helper', command)
 
