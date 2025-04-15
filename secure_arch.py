@@ -42,9 +42,9 @@ class CustomFormatter(logging.Formatter):
         'INFO':      'yellow',
         'WARNING':   'bold yellow',
         'success':   'green',
-        'ERROR':     'bold reverse red',
+        'ERROR':     'red',
         'DEBUG':     'blue',
-        'CRITICAL':  'red',
+        'CRITICAL':  'bold reverse red',
         }
 
     def format(self, record):
@@ -62,7 +62,7 @@ handler = RichHandler(
     show_path=False)            # Do not show file causing log - always the same
 handler.setFormatter(CustomFormatter())
 log = logging.getLogger("rich")
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 log.addHandler(handler)
 
 # Debugging variables
@@ -1448,16 +1448,15 @@ if __name__ == '__main__':
     else:
         SYSTEM_MODULES = ''
 
-    command = textwrap.dedent(f"""\
-    cat <<EOF >/mnt/etc/mkinitcpio.conf
-    MODULES=({SYSTEM_MODULES})
-    BINARIES=(setfont)
-    FILES=()
-    HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)
-    EOF
-    """).strip()
+    SYSTEM_CMD = [
+        f'MODULES=({SYSTEM_MODULES})',
+        'BINARIES=(setfont)',
+        'FILES=()',
+        'HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)'
+    ]
 
-    run_bash('Configuring mkinitcpio', command)
+    # Overwrite the config file with the SYSTEM_CMD data
+    with open('/mnt/etc/mkinitcpio.conf', 'w') as f: f.write('\n'.join(SYSTEM_CMD) + '\n')
     run_bash('Creating the initial RAM disk image', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
 
 
