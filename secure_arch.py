@@ -14,6 +14,12 @@
 # - Make sure a strong UEFI administrator password is set.
 # - Set SATA operation to AHCI mode.
 #
+# Drive layout:
+#    /dev/sdx
+#            /sdx1            - primary    -  15 GB >
+#                 /archlinux  - encrypted
+#            /sdx2            - esp        - 550 MB
+#
 # Run installation:
 #
 # - Connect to wifi via: `# iwctl station wlan0 connect WIFI-NETWORK`
@@ -52,16 +58,16 @@ STEP = False                   # If true, step one command at the time
 
 # Global Constants
 SYSTEM_FONT = 'ter-132n'       # System font ('ter-132n' , 'ter-716n')
-PART_1_NAME = "Primary"
-PART_2_NAME = "ESP"
+PART_1_NAME = "primary"
+PART_2_NAME = "esp"
+PART_1_UUID = 'archlinux'      # Name of volume 1 (archlinux)
+PART_2_UUID = 'esp'            # Name of volume 2 (esp)
 BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
 SYSTEM_LOG_FILE ='install.log' # Set to None to disable or with a string "install.log"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
 DRIVE_PASSWORD = None           # Encryption password for partitions
-PART_1_UUID = None              # UUID of partition 1
-PART_2_UUID = None              # UUID of partition 2
 USER_NAME = None                # User name for backup devices (no root)
 USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
@@ -1286,15 +1292,17 @@ if __name__ == '__main__':
     # Format partitions
     # -- partition 2 - Root  ---------------------------------------------------
     run_bash('Partition 2 - Formatting {PART_2_NAME}','mkfs.vfat -n {PART_2_NAME} -F 32 {DRIVE}2')
-    run_bash('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
+    # TODO - remove and remve PART_2_UUID variable
+    # run_bash('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
 
 ##- partition 1 ---------------------------------------------------------------
 
-    run_bash('Partition 1 - Encrypting {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_NAME} {DRIVE}1',input="{LUKS_PASSWORD}")
-    run_bash('Partition 1 - Get UUID for {PART_1_NAME}', 'cryptsetup luksUUID {DRIVE}1', output_var='PART_1_UUID')
+    run_bash('Partition 1 - Format to Luks {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_UUID} {DRIVE}1',input="{LUKS_PASSWORD}")
+    # TODO - Remove PART_1_UUID is set to archlinux
+    # run_bash('Partition 1 - Get UUID for {PART_1_NAME}', 'cryptsetup luksUUID {DRIVE}1', output_var='PART_1_UUID')
     run_bash('Partition 1 - Open {PART_1_NAME}', 'cryptsetup luksOpen {DRIVE}1 {PART_1_UUID}' ,input="{LUKS_PASSWORD}")
 
-    run_bash('Partition 1 - Set file system {PART_1_NAME} to BTRFS', 'mkfs.btrfs --label {PART_1_NAME} /dev/mapper/{PART_1_UUID}')
+    run_bash('Partition 1 - Set file system {PART_1_NAME} to BTRFS', 'mkfs.btrfs --label {PART_1_UUID} /dev/mapper/{PART_1_UUID}')
     run_bash('Partition 1 - Mount {PART_1_NAME}', 'mount /dev/mapper/{PART_1_UUID} /mnt')
     run_bash('Partition 1 - Create subvolume @',                   'btrfs subvolume create /mnt/@')
     run_bash('Partition 1 - Create subvolume @home',               'btrfs subvolume create /mnt/@home')
@@ -1374,7 +1382,7 @@ if __name__ == '__main__':
     SYSTEM_CMD = [
         'lsm=landlock,lockdown,yama,integrity,apparmor,bpf', # Customize Linux Security Modules to include AppArmor
         'lockdown=integrity',                                # Put kernel in integrity lockdown mode
-        f'cryptdevice={PART_1_NAME}:{PART_1_UUID}',          # The LUKS device to decrypt
+        f'cryptdevice={DRIVE}1:{PART_1_UUID}',               # The LUKS device to decrypt
         f'root=/dev/mapper/{PART_1_UUID}',                   # The decrypted device to mount as the root
         'rootflags=subvol=@',                                # Mount the @ btrfs subvolume inside the decrypted device as the root
         'mem_sleep_default=deep',                            # Allow suspend state (puts device into sleep but keeps powering the RAM for fast sleep mode recovery)
