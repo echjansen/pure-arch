@@ -1166,9 +1166,6 @@ if __name__ == '__main__':
 
     console.clear()
 
-    run_bash('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' login.defs")
-    prompt.ask('Stop ^C')
-
 #-- System check  -------------------------------------------------------------
     console.print(Rule("System Check"), style='success')
 
