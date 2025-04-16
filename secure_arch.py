@@ -89,17 +89,17 @@ SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
 
 # Configure me or leave commented out
 # DRIVE = '/dev/sdb'              # The device that will be made into a backup device
-# DRIVE_PASSWORD = '123'          # Encryption password for partitions
-# USER_NAME = 'echjansen'         # User name for backup devices (no root)
-# USER_PASSWORD = '123'           # User password for backup device
-# LUKS_PASSWORD = '123'           # Luks password for drive(s)
-# SYSTEM_HOSTNAME = 'archlinux'   # System host name
-# SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
-# SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
-# SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
-# SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
-# SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
-# SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
+DRIVE_PASSWORD = '123'          # Encryption password for partitions
+USER_NAME = 'echjansen'         # User name for backup devices (no root)
+USER_PASSWORD = '123'           # User password for backup device
+LUKS_PASSWORD = '123'           # Luks password for drive(s)
+SYSTEM_HOSTNAME = 'archlinux'   # System host name
+SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
+SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
+SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
+SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
+SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
+SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 # 'rich' objects
 theme = Theme({
