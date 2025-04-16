@@ -1406,7 +1406,7 @@ if __name__ == '__main__':
 #-- Configure Plymouth  -------------------------------------------------------
 
     run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
-    run_bash('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' login.defs")
+    run_bash('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' /mnt/etc/login.defs")
 
 #-- User and Group accounts  --------------------------------------------------
 
