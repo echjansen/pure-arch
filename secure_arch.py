@@ -53,7 +53,7 @@ from rich.logging import RichHandler
 from typing import Union, Tuple, Optional
 
 # Debugging variables
-DEBUG = False                  # If True, report on command during execution
+DEBUG = True                  # If True, report on command during execution
 STEP = False                   # If true, step one command at the time
 
 # Global Constants
@@ -699,7 +699,6 @@ def select_drive() -> str:
             except Exception:
                 device_models[name] = "Unknown Model"
 
-
         # Display the available drives in a table
         table = Table(title="Available Disks")
         table.add_column("Index", justify="right", style="cyan", no_wrap=True)
@@ -1167,6 +1166,9 @@ if __name__ == '__main__':
 
     console.clear()
 
+    run_bash('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' login.defs")
+    prompt.ask('Stop ^C')
+
 #-- System check  -------------------------------------------------------------
     console.print(Rule("System Check"), style='success')
 
@@ -1298,8 +1300,6 @@ if __name__ == '__main__':
 ##- partition 1 ---------------------------------------------------------------
 
     run_bash('Partition 1 - Format to Luks {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_UUID} {DRIVE}1',input="{LUKS_PASSWORD}")
-    # TODO - Remove PART_1_UUID is set to archlinux
-    # run_bash('Partition 1 - Get UUID for {PART_1_NAME}', 'cryptsetup luksUUID {DRIVE}1', output_var='PART_1_UUID')
     run_bash('Partition 1 - Open {PART_1_NAME}', 'cryptsetup luksOpen {DRIVE}1 {PART_1_UUID}' ,input="{LUKS_PASSWORD}")
 
     run_bash('Partition 1 - Set file system {PART_1_NAME} to BTRFS', 'mkfs.btrfs --label {PART_1_UUID} /dev/mapper/{PART_1_UUID}')
@@ -1408,9 +1408,8 @@ if __name__ == '__main__':
 
 #-- Configure Plymouth  -------------------------------------------------------
 
-    # TODO - Added /mnt in front of /etc/login.defs
-    # run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
-    # run_bash('Clean login experience on TTY and SSH', "sed -i 's/HUSHLOGIN_FILE.*/#\0/g' /mnt/etc/login.defs")
+    run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
+    run_bash('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' login.defs")
 
 #-- User and Group accounts  --------------------------------------------------
 
@@ -1550,13 +1549,10 @@ if __name__ == '__main__':
 
     run_bash('Install dotfiles ....(patience)', command)
 
-# -- Cleaning up --------------------------------------------------------------
-
-    run_bash('Swapfile off','swapoff -a')
-    run_bash('Partitions - Umount', 'umount --recursive /mnt')
-    run_bash('Partition 1 - Close Luks', 'cryptsetup luksClose {PART_1_UUID}')
-
 # -- Done ---------------------------------------------------------------------
 
     if prompt.ask("[green]Installation complete successfully. Reboot?[/]", choices=['y', 'n']) == 'y':
+        run_bash('Swapfile off','swapoff -a')
+        run_bash('Partitions - Umount', 'umount --recursive /mnt')
+        run_bash('Partition 1 - Close Luks', 'cryptsetup luksClose {PART_1_UUID}')
         run_bash('Rebooting', 'reboot now')
