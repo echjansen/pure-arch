@@ -34,6 +34,7 @@
 # - [ ] Use 'dialog' for the user input
 #----------------------------------------------------------------------------------------------------------------------
 import os
+import sys
 import shutil
 import logging
 import subprocess
@@ -42,10 +43,8 @@ from rich.console import Console
 from rich.theme import Theme
 from rich.prompt import Prompt
 from rich.rule import Rule
-from rich.table import Table
 from rich.logging import RichHandler
-from typing import Union, Tuple, Optional
-from userconfig import configure_hostname, configure_username, configure_password, configure_drive, configure_locale, configure_timezone, configure_keyboard, configure_country
+from typing import Union
 
 # Debugging variables
 DEBUG = True                   # If True, report on command during execution
@@ -669,7 +668,7 @@ class UserEntry:
 
 
 #----------------------------------------------------------------------------------------------------------------------
-# User Entry Functions
+# System Functions
 #----------------------------------------------------------------------------------------------------------------------
 def get_cpu_brand() -> str:
     """
@@ -1093,6 +1092,15 @@ if __name__ == '__main__':
     if Prompt.ask('\nSystem configuration correct. Continue installation?', choices=['y', 'n']) == 'n':
         exit()
 
+#-- System Preparation and Checks  --------------------------------------------
+    console.print(Rule("System Preparation"), style='success')
+
+    run_bash('Set the time server', 'timedatectl set-ntp true')
+    run_bash('Synchronise system clock', 'hwclock --systohc --utc')
+    run_bash('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
+    run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector dialog terminus-font wget mg')
+    run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
+
 #-- User Entry ----------------------------------------------------------------
 
     console.print(Rule("User selections for installation"), style='success')
@@ -1179,16 +1187,8 @@ if __name__ == '__main__':
     if Prompt.ask('\nAre these selections correct, and continue installation?', choices=['y', 'n']) == 'n':
         exit()
 
-#-- System Preparation and Checks  --------------------------------------------
-    console.print(Rule("System Installation"), style='success')
-
-    run_bash('Set the time server', 'timedatectl set-ntp true')
-    run_bash('Synchronise system clock', 'hwclock --systohc --utc')
-    run_bash('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
-    run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector terminus-font wget mg')
-    run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
-
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
+    console.print(Rule("System Installation"), style='success')
 
     # Write random data to the whole disk
     if SYSTEM_WIPE_DISK: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}', check_returncode=False)
