@@ -31,7 +31,8 @@
 #   sudo python secure_arch.py
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - [ ] Use 'dialog' for the user input
+# - [X] Use 'dialog' for the user input
+# - [ ] Use Luks 2 for encryption
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -1280,7 +1281,7 @@ if __name__ == '__main__':
     run_bash('Copy mirror list', 'cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/')
     run_bash('Patch pacman configuration -colours', 'sed -i "s/#Color/Color/g" /mnt/etc/pacman.conf')
     run_bash('Patch qemu configuration - user', 'sed -i "s/username_placeholder/{USER_NAME}/g" /mnt/etc/libvirt/qemu.conf')
-    run_bash('Patch tty configuration - user', 'sed -i "s/username_placeholder/(USER_NAME)/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
+    run_bash('Patch tty configuration - user', 'sed -i "s/username_placeholder/{USER_NAME}/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
     run_bash('Patch shell - dash', 'ln -sfT dash /mnt/usr/bin/sh')
 
 #-- Write Kernel Command Line  ------------------------------------------------
