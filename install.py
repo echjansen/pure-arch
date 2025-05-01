@@ -28,16 +28,10 @@
 #   pacman -S git python-rich
 #   git clone https://github.com/echjansen/pure-arch
 #   cd pure-arch
-#   python secure_arch.py
-#----------------------------------------------------------------------------------------------------------------------
-# Goals:
-# - Use python script to install Arch Linux
-# - Secure the OS but leave it workable
-# - Start necessary background services (that are often forgotten)
-# - Report on 'misbehaviour'
+#   sudo python secure_arch.py
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - [ ] Is it better to use UUID instead of disk name? LuksOpen / LuksClose / fstab
+# - [ ] Use 'dialog' for the user input
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import shutil
@@ -51,9 +45,10 @@ from rich.rule import Rule
 from rich.table import Table
 from rich.logging import RichHandler
 from typing import Union, Tuple, Optional
+from userconfig import configure_hostname, configure_username, configure_password, configure_drive, configure_locale, configure_timezone, configure_keyboard, configure_country
 
 # Debugging variables
-DEBUG = True                  # If True, report on command during execution
+DEBUG = True                   # If True, report on command during execution
 STEP = False                   # If true, step one command at the time
 
 # Global Constants
@@ -62,8 +57,8 @@ PART_1_NAME = "primary"
 PART_2_NAME = "esp"
 PART_1_UUID = 'archlinux'      # Name of volume 1 (archlinux)
 PART_2_UUID = 'esp'            # Name of volume 2 (esp)
-BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
 SYSTEM_LOG_FILE ='install.log' # Set to None to disable or with a string "install.log"
+BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
@@ -73,10 +68,8 @@ USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
 SYSTEM_HOSTNAME = None          # System hostname
 SYSTEM_LOCALE = None            # System locale ('en_US')
-SYSTEM_CHARMAP = None           # System keyboard layout ('UTF-8')
 SYSTEM_KEYB = None              # System keyboard layout
 SYSTEM_COUNTRY = None           # System country ('Australia')
-SYSTEM_COUNTRY_CODE = None      # System country code ('au')
 SYSTEM_TIMEZONE = None          # System timezone, used for repository downloads
 SYSTEM_CPU = None               # System CPU brand (Intel, AMD, etc)
 SYSTEM_GPU = None               # System GPU brand (Intel, AMD, NVIDIA, etc)
@@ -89,17 +82,15 @@ SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
 
 # Configure me or leave commented out
 # DRIVE = '/dev/sdb'              # The device that will be made into a backup device
-DRIVE_PASSWORD = '123'          # Encryption password for partitions
-USER_NAME = 'echjansen'         # User name for backup devices (no root)
-USER_PASSWORD = '123'           # User password for backup device
-LUKS_PASSWORD = '123'           # Luks password for drive(s)
-SYSTEM_HOSTNAME = 'archlinux'   # System host name
-SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
-SYSTEM_CHARMAP = 'UTF-8'        # System keyboard layout ('UTF-8')
-SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
-SYSTEM_COUNTRY_CODE = 'au'      # System country code ('au')
-SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
-SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
+# DRIVE_PASSWORD = '123'          # Encryption password for partitions
+# USER_NAME = 'echjansen'         # User name for backup devices (no root)
+# USER_PASSWORD = '123'           # User password for backup device
+# LUKS_PASSWORD = '123'           # Luks password for drive(s)
+# SYSTEM_HOSTNAME = 'archlinux'   # System host name
+# SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
+# SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
+# SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
+# SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 # 'rich' objects
 theme = Theme({
@@ -126,42 +117,560 @@ class CustomFormatter(logging.Formatter):
         record.msg = f'[{log_color}]{record.msg}[/{log_color}]'
         return super().format(record)
 
-console = Console(theme=theme)
-prompt = Prompt()
-handler = RichHandler(
-    rich_tracebacks=True,       # Show rich debug info during error
-    markup=True,                # Show data as Markup
-    show_time=False,            # Do not show logging time
-    show_level=True,            # Do show logging level (Info, debug, etc)
-    show_path=False)            # Do not show file causing log - always the same
-handler.setFormatter(CustomFormatter())
-log = logging.getLogger("rich")
-log.setLevel(logging.INFO)
-log.addHandler(handler)
-
 #----------------------------------------------------------------------------------------------------------------------
-# Supporting functions
+# System Check Functions
 #----------------------------------------------------------------------------------------------------------------------
-def ask_yes_no(prompt_text: str) -> Optional[bool]:
+def check_sudo():
     """
-    Asks the user a yes/no question and returns True for "y" and False for "n".
-
-    Args:
-        prompt_text: The question to ask the user.
-
-    Returns:
-        True if the user enters "y" (case-insensitive), False if the user enters "n" (case-insensitive),
-        or None if the user enters an invalid response.
+    Check that the software is running with sudo privileges.
     """
-    while True:
-        response = Prompt.ask("[yellow]" + prompt_text + "[/]", choices=["y", "n"]).lower() # Force lowercase
-        if response == "y":
+
+    if os.getegid() == 0:
+        log.info("Script is running with sudo privileges.")
+        return True
+    else:
+        log.critical("Application must run with sudo privileges.")
+        return False
+
+def check_uefi():
+    """
+    Check that the system is running in UEFI mode (Unified Extensible Firmware Interface).
+    """
+
+    if os.path.exists('/sys/firmware/efi/'):
+        log.info("System is booted in UEFI mode.")
+        return True
+    else:
+        log.critical("System is NOT booted in UEFI mode (likely BIOS/Legacy mode).")
+        return False
+
+def check_secure_boot():
+    """
+    Check that the system is running with Secure Boot
+    """
+
+    try:
+        # Execute dmesg | grep -1 tpm
+        result = subprocess.run(
+            ['dmesg'],
+            capture_output=True,
+            text=True,
+            check=True          # Check for non-zero exit code
+        )
+        dmesg_output = result.stdout.strip()
+
+        grep_result = subprocess.run(
+            ['grep', '-i', 'tpm'],
+            input=dmesg_output,
+            capture_output=True,
+            text=True,
+            check=False          # Do Not check for non-zero exit code
+        )
+        grep_output = grep_result.stdout.strip()
+
+        if grep_output:
+            log.info('TPM (Trusted Platform Module) detected.')
             return True
-        elif response == "n":
-            return False
         else:
-            print("Invalid input. Please enter 'y' or 'n'.")
+            log.critical('TPM (Trusted Platform Module) not detected.')
+            return False
 
+    except subprocess.CalledProcessError as e:
+        console.print(f'Error executing dmesg: {e}', style='critical')
+        exit()
+    except Exception as e:
+        console.print(f'An unexpected error occurred: {e}', style='critical')
+        exit()
+
+
+
+
+#----------------------------------------------------------------------------------------------------------------------
+# User Entry class
+#----------------------------------------------------------------------------------------------------------------------
+class UserEntry:
+    """A class for gathering user information via dialog prompts."""
+
+    def __init__(self):
+        """Initializes the UserEntry class."""
+        self.user_data = {}  # To store user entries
+
+    # --- Support Functions ---
+
+    def _run_dialog(self, *args):
+        """Run dialog with fixed dimensions and force compatibility with terminal emulators."""
+        cmd = ['dialog',  '--clear', '--stdout'] + list(args)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            os.system('clear')  # Helps clean up after dialog in terminal emulator
+            return result.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            print(f"Dialog command failed with return code {e.returncode}: {e.stderr}")
+            return None  # Treat non-zero return as cancel
+        except FileNotFoundError:
+            print("Error: 'dialog' program not found.  Please install it.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error running dialog: {e}")
+            return None
+
+    def _run_inputbox(self, title, text, init="", height=0, width=0):
+        """Runs an inputbox dialog prompt using the 'dialog' program."""
+        cmd = ["--title", title, "--inputbox", text, str(height), str(width), init]
+        result = self._run_dialog(*cmd)
+        return result
+
+    def _run_passwordbox(self, title, text, height=0, width=0):
+        """Runs a passwordbox dialog prompt using the 'dialog' program."""
+        cmd = ["--title", title, "--passwordbox", text, str(height), str(width)]
+        result = self._run_dialog(*cmd)
+        return result
+
+    def run_yesno(self, title, text, height=0, width=0):
+        """Runs a yes/no dialog prompt using the 'dialog' program.
+
+        Returns:
+            True if 'Yes' is selected.
+            False if 'No' or Cancel is selected, or if an error occurs.
+        """
+        cmd = ['dialog', '--title', title, '--yesno', text, str(height), str(width)]
+        try:
+            # Clear the screen using escape codes
+            print("\033[2J\033[H", end="")  # Clear screen and move cursor to top-left
+            result = subprocess.run(cmd, capture_output=False, text=True, check=False)
+            return result.returncode == 0
+        except FileNotFoundError:
+            print("Error: 'dialog' program not found.  Please install it.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error running dialog: {e}")
+            return False
+
+    def _run_msgbox(self, title, text, height=0, width=0):
+        """Runs a message box dialog prompt using the 'dialog' program."""
+        cmd = ["--title", title, "--msgbox", text, str(height), str(width)]
+        self._run_dialog(*cmd)  # No return value needed for msgbox
+
+    # --- System Functions ---
+
+    def _get_drive_info(self, drive):
+        """Gets drive size and model information using `lsblk` and `hdparm`."""
+        size = "Unknown"
+        model = "Unknown"
+
+        try:
+            # Get size using lsblk
+            result = subprocess.run(['lsblk', '-dn', '-b', '-o', 'SIZE', f'/dev/{drive}'], capture_output=True, text=True, check=True)
+            size_bytes = int(result.stdout.strip())
+            size_gb = size_bytes / (1024 ** 3)  # Convert to GB
+            size = f"{size_gb:.2f} GB"
+        except subprocess.CalledProcessError as e:
+            print(f"Error getting size for {drive}: {e.stderr}")
+        except Exception as e:
+            print(f"Error getting size for {drive}: {e}")
+
+        try:
+            # Get model using hdparm
+            result = subprocess.run(['hdparm', '-I', f'/dev/{drive}'], capture_output=True, text=True, check=True)
+            for line in result.stdout.splitlines():
+                if "Model Number:" in line:
+                    model = line.split(":", 1)[1].strip()
+                    break
+        except subprocess.CalledProcessError as e:
+            print(f"Error getting model for {drive}: {e.stderr}")
+        except FileNotFoundError:
+            print("Error: hdparm not found. Please install it.")
+        except Exception as e:
+            print(f"Error getting model for {drive}: {e}")
+
+        return size, model
+
+    def _get_drives(self):
+        """Lists available drives and their info."""
+        try:
+            result = subprocess.run(['lsblk', '-dn', '-o', 'NAME'], capture_output=True, text=True, check=True)
+            drives = [line.strip() for line in result.stdout.splitlines() if "loop" not in line]
+            drive_info = []
+            for drive in drives:
+                size, model = self._get_drive_info(drive)
+                drive_info.append((drive, size, model))
+            return drive_info
+        except subprocess.CalledProcessError as e:
+            print(f"Error listing drives: {e.stderr}")
+            return []
+        except FileNotFoundError:
+            print("Error: 'lsblk' command not found.")
+            return []
+        except Exception as e:
+            print(f"An error occurred listing drives: {e}")
+            return []
+
+    def _get_timezones(self):
+        """Lists timezones from /usr/share/zoneinfo using glob."""
+        timezone_dir = "/usr/share/zoneinfo"
+        timezones = []
+        for root, _, files in os.walk(timezone_dir):
+            for file in files:
+                full_path = os.path.join(root, file)
+                if os.path.isfile(full_path):  # Only add files, skip directories that may not be valid timezones
+                    relative_path = os.path.relpath(full_path, timezone_dir)
+                    timezones.append(relative_path)  # Relative to /usr/share/zoneinfo
+        return timezones
+
+    def _get_locales(self):
+        """Reads available locales from /usr/share/i18n/SUPPORTED."""
+        try:
+            with open("/usr/share/i18n/SUPPORTED", "r") as f:
+                locales = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+                return locales
+        except FileNotFoundError:
+            print("Error: /usr/share/i18n/SUPPORTED not found.")
+            return []
+        except Exception as e:
+            print(f"Error reading locales: {e}")
+            return []
+
+    def _get_keyboard_layouts(self, keymap_dir="/usr/share/kbd/keymaps"):
+        """Lists available keyboard layouts from the specified directory."""
+        layouts = []
+        try:
+            for root, _, files in os.walk(keymap_dir):
+                for file in files:
+                    if file.endswith(".map.gz") or file.endswith(".map"):
+                        # Remove the .map.gz or .map extension to get the layout name
+                        layout_name = file[:-7] if file.endswith(".map.gz") else file[:-4]
+                        layouts.append(layout_name)
+        except Exception as e:
+            print(f"Error reading keyboard layouts: {e}")
+            return []
+        return sorted(layouts)  # Sort the layouts alphabetically
+
+    def _get_reflector_countries(self):
+        """Gets the list of countries from `reflector --list-countries`."""
+        try:
+            result = subprocess.run(['reflector', '--list-countries'], capture_output=True, text=True, check=True)
+            countries = [line.strip() for line in result.stdout.splitlines()]
+            return countries
+        except FileNotFoundError:
+            print("Error: reflector not found. Please install it.")
+            return []
+        except subprocess.CalledProcessError as e:
+            print(f"Error listing countries: {e.stderr}")
+            return []
+        except Exception as e:
+            print(f"An error occurred listing countries: {e}")
+            return []
+
+    def _set_console_font(self, font):
+        """Sets the console font using `setfont`."""
+        try:
+            subprocess.run(['setfont', font], check=True)
+            print(f"Console font set to: {font}")
+        except FileNotFoundError:
+            print("Error: setfont not found. Please install it.")
+        except subprocess.CalledProcessError as e:
+            print(f"Error setting font: {e.stderr}")
+
+    # --- User Selection Functions ---
+
+    def configure_hostname(self, default=""):
+        """Prompts the user for a hostname."""
+        result = self._run_inputbox("Hostname Configuration", "Enter the desired hostname:", default, height=8, width=40)
+        if result:
+            self.user_data["hostname"] = result
+        return result
+
+    def configure_username(self):
+        """Prompts the user for a User name."""
+        result = self._run_inputbox("User Configuration", "Enter the username:", height=8, width=40)
+        if result:
+            self.user_data["username"] = result
+        return result
+
+    def configure_userpassword(self):
+        """Prompts the user for a User password (with confirmation)."""
+        while True:
+            password = self._run_passwordbox("User Configuration", "Enter the user password:", height=8, width=40)
+            if not password:
+                return None
+
+            password_confirm = self._run_passwordbox("User Configuration", "Confirm the user password:", height=8, width=40)
+            if not password_confirm:
+                return None
+
+            if password == password_confirm:
+                self.user_data["userpassword"] = password
+                return password
+            else:
+                print("Passwords do not match. Please try again.")
+
+    def configure_lukspassword(self):
+        """Prompts the user for a Luks password (with confirmation)."""
+        while True:
+            password = self._run_passwordbox("Luks Configuration", "Enter the Luks password:", height=8, width=40)
+            if not password:
+                return None
+
+            password_confirm = self._run_passwordbox("Luks Configuration", "Confirm the Luks password:", height=8, width=40)
+            if not password_confirm:
+                return None
+
+            if password == password_confirm:
+                self.user_data["lukspassword"] = password
+                return password
+            else:
+                print("Passwords do not match. Please try again.")
+
+
+    def configure_drive(self):
+        """Presents a menu to select a drive for installation."""
+        drives = self._get_drives()
+        if not drives:
+            print("No drives found. Please ensure you have a drive connected.")
+            return None
+
+        drive_items = []
+        for drive, size, model in drives:
+            label = f"{drive} - {model} ({size})"
+            drive_items.append((drive, label))
+
+        menu_items = []
+        for drive, label in drive_items:
+            menu_items.extend([drive, label])
+
+        selected_drive = self._run_dialog("--menu", "Select the drive for installation:", "20", "70", "10", *menu_items)
+
+        if selected_drive:
+            selected_drive = "/dev/" + selected_drive
+            self.user_data["drive"] = selected_drive
+        return selected_drive
+
+    def configure_locale(self, default=""):
+        """Prompts the user for a locale and filters the results."""
+        locales = self._get_locales()
+        if not locales:
+            print("No locales found.")
+            return None
+
+        while True:
+            filter_string = self._run_inputbox("Locale Selection", "Enter a filter string (e.g., 'en_US') or leave blank for all:", default, height=8, width=60)
+            if filter_string is None:
+                return None
+
+            filtered_locales = [locale for locale in locales if filter_string.lower() in locale.lower()]
+
+            if not filtered_locales:
+                print("No locales match the filter. Try again.")
+            else:
+                locale_items = [(locale, locale) for locale in filtered_locales]
+                menu_items = []
+                for locale, label in locale_items:
+                    menu_items.extend([locale, label])
+
+                selected_locale = self._run_dialog("--menu", "Select the desired locale:", "15", "60", "10", *menu_items)
+                if selected_locale:
+                    self.user_data["locale"] = selected_locale
+                    return selected_locale
+                else:
+                    return None  # User canceled the locale selection
+
+    def configure_timezone(self):
+        """Prompts the user for a timezone and filters the results."""
+        timezones = self._get_timezones()
+        if not timezones:
+            print("No timezones found.")
+            return None
+
+        while True:
+            filter_string = self._run_inputbox("Timezone Selection", "Enter a filter string (e.g., 'America') or leave blank for all:", height=8, width=60)
+            if filter_string is None:
+                return None
+
+            filtered_timezones = [tz for tz in timezones if filter_string.lower() in tz.lower()]
+
+            if not filtered_timezones:
+                print("No timezones match the filter. Try again.")
+            else:
+                timezone_items = [(tz, tz) for tz in filtered_timezones]
+
+                menu_items = []
+                for tz, label in timezone_items:
+                    menu_items.extend([tz, label])
+
+                selected_timezone = self._run_dialog("--menu", "Select the desired timezone:", "15", "60", "10", *menu_items)
+                if selected_timezone:
+                    self.user_data["timezone"] = selected_timezone
+                    return selected_timezone
+                else:
+                    return None  # User canceled the timezone selection
+
+    def configure_keyboard(self):
+        """Presents a menu to select a keyboard layout."""
+        keyboard_layouts = self._get_keyboard_layouts()
+        if not keyboard_layouts:
+            print("No keyboard layouts found.")
+            return None
+
+        layout_items = [(layout, layout) for layout in keyboard_layouts]
+
+        menu_items = []
+        for layout, label in layout_items:
+            menu_items.extend([layout, label])
+
+        selected_keyboard = self._run_dialog("--menu", "Select the desired keyboard layout (us):", "20", "60", "10", *menu_items)  # Adjusted sizes
+        if selected_keyboard:
+            self.user_data["keyboard"] = selected_keyboard
+        return selected_keyboard
+
+    def configure_country_reflector(self):
+        """Presents a menu to select a country from the reflector country list."""
+        countries = self._get_reflector_countries()
+        if not countries:
+            print("No countries found.")
+            return None
+
+        country_items = [(country, country) for country in countries]
+
+        menu_items = []
+        for country, label in country_items:
+            menu_items.extend([country, label])
+
+        selected_country = self._run_dialog("--menu", "Select a country:", "20", "60", "10", *menu_items)
+        if selected_country:
+            self.user_data["country"] = selected_country
+        return selected_country
+
+    def configure_country(self):
+        """Presents a menu to select a country from a static list."""
+        countries = [  # A reasonably comprehensive list
+            "United States", "Canada", "United Kingdom", "Germany", "France", "Japan", "China", "India",
+            "Australia", "Brazil", "Mexico", "Italy", "Spain", "Netherlands", "Switzerland", "Sweden",
+            "Belgium", "Austria", "Norway", "Denmark", "Finland", "Ireland", "Portugal", "Greece",
+            "Poland", "Russia", "South Africa", "Argentina", "Chile", "Colombia", "Peru", "Venezuela",
+            "Singapore", "Hong Kong", "South Korea", "Taiwan", "Thailand", "Vietnam", "Indonesia",
+            "Malaysia", "Philippines", "New Zealand"
+        ]
+
+        sorted_countries = sorted(countries)
+
+        country_items = [(country, country) for country in sorted_countries]
+
+        menu_items = []
+        for country, label in country_items:
+            menu_items.extend([country, label])
+
+        selected_country = self._run_dialog("--menu", "Select a country:", "20", "60", "10", *menu_items)
+        if selected_country:
+            self.user_data["country"] = selected_country
+        return selected_country
+
+    def configure_font(self):
+        """Presents a menu to select a console font and applies it immediately."""
+        font_options = [
+            ("ter-116n", "ter-124n (Small)"),
+            ("ter-124n", "ter-124n (Medium)"),
+            ("ter-128n", "ter-128n (Large)"),
+            ("ter-132n", "ter-132n (Extra Large)")  # Common Terminus fonts
+        ]
+
+        menu_items = []
+        for font, label in font_options:
+            menu_items.extend([font, label])
+
+        selected_font = self._run_dialog("--menu", "Select a console font:", "20", "60", "10", *menu_items)
+
+        if selected_font:
+            self._set_console_font(selected_font)  # Apply the selected font immediately
+            self.user_data["font"] = selected_font
+
+        return selected_font
+
+    def configure(self):
+        """Main function to orchestrate the Arch Linux configuration process."""
+        print("Starting Arch Linux Configuration...")
+
+        # First, configure the font size
+        font = self.configure_font()
+        if font:
+            self._set_console_font(font)
+        else:
+            print("Font configuration canceled or failed. Using default font.")
+
+        drive = self.configure_drive()
+        if not drive:
+            print("Drive selection canceled.")
+            return None
+
+        lukspassword = self.configure_lukspassword()
+        if not lukspassword:
+            print("Password configuration canceled.")
+            return None
+
+        hostname = self.configure_hostname("archlinux")
+        if not hostname:
+            print("Hostname configuration canceled.")
+            return None
+
+        username = self.configure_username()
+        if not username:
+            print("User configuration canceled.")
+            return None
+
+        userpassword = self.configure_userpassword()
+        if not userpassword:
+            print("Password configuration canceled.")
+            return None
+
+        locale = self.configure_locale("en_US")
+        if not locale:
+            print("Locale selection canceled.")
+            return None
+
+        timezone = self.configure_timezone()
+        if not timezone:
+            print("Timezone configuration canceled.")
+            return None
+
+        keyboard = self.configure_keyboard()
+        if not keyboard:
+            print("Keyboard layout selection canceled.")
+            return None
+
+        country = self.configure_country()
+        if not country:
+            print("Country selection canceled.")
+            return None
+
+        # --- Configuration Summary ---
+        summary_text = f"""
+        Hostname: ......... {hostname}
+        Username: ......... {username}
+        Drive: ............ {drive}
+        Locale: ........... {locale}
+        Timezone: ......... {timezone}
+        Keyboard Layout: .. {keyboard}
+        Country: .......... {country}
+        """
+
+        self._run_msgbox("Configuration Summary", summary_text, 20, 60)
+
+        confirmation_text = f"""
+        WARNING! You are about to delete all data on drive {drive}!!!
+
+        Do you want to continue with the installation?
+        """
+        confirm = self.run_yesno("Confirmation", confirmation_text)
+        if not confirm:
+            print("Installation canceled.")
+            return None
+
+        return self.user_data
+
+
+
+#----------------------------------------------------------------------------------------------------------------------
+# User Entry Functions
+#----------------------------------------------------------------------------------------------------------------------
 def get_cpu_brand() -> str:
     """
     Uses the 'lscpu' command to determine the CPU brand (Intel, AMD, etc.).
@@ -301,37 +810,6 @@ def get_virtualizer() -> str:
         return "Unknown"
 
 
-def get_keyboards() -> List[str]:
-    """
-    Retrieves a list of available keyboard layouts using the 'localectl list-keymaps' command.
-
-    Returns:
-        A list of keyboard layout names (e.g., "us", "de", "fr").
-        Returns an empty list if an error occurs or no layouts are found.
-    """
-
-    try:
-        # Execute localectl list-keymaps
-        result = subprocess.run(
-            ['localectl', 'list-keymaps'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-        keyboards = output.splitlines()
-        return keyboards
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing localectl: {e}", style='critical')
-        return []
-    except FileNotFoundError:
-        console.print("Error: localectl command not found. Please ensure systemd is installed.", style='critical')
-        return []
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return []
-
-
 def get_packages_from_file(filepath: str) -> List[str]:
     """
     Reads a file containing a list of package names (one per line),
@@ -415,598 +893,6 @@ def find_subdirectory(source_name: str) -> Union[str, None]:
         console.print(f"An unexpected error occurred: {e}", style='critical')
         return None
 
-def write_config_to_file(config_lines: List[str], target_file: str) -> None:
-    """
-    Writes a list of configuration lines to a target file, appending each line with a newline.
-    Creates the file if it does not exist.
-
-    Args:
-        config_lines: A list of strings, where each string represents a configuration line.
-        target_file: The path to the file to write the configuration lines to.
-    """
-    try:
-        with open(target_file, 'a') as f:  # Open in append mode ('a') - creates the file if it does not exist
-            for line in config_lines:
-                f.write(line + '\n')  # Append each line with a newline
-
-    except Exception as e:
-        console.print(f"Error writing to '{target_file}': {e}", style='critical')
-
-def select_from_directory_with_search(directory: str, item_type: str, remove_extension: bool = False) -> str:
-    """
-    Lists and allows the user to select an item from a directory, with a search function.
-
-    Args:
-        directory: The directory to list items from.
-        item_type: The type of item (e.g., "locale", "charmap") for display purposes.
-
-        remove_extension: Whether to remove the extension from the displayed item names.
-
-    Returns:
-        str: The selected item name.
-             Returns an empty string if no item is selected or an error occurs.
-    """
-
-    try:
-        if not os.path.isdir(directory):
-            console.print(f"[bold red]Error: {directory} not found.[/]")
-            return ""
-
-        all_items = [f for f in os.listdir(directory) if os.path.isfile(os.path.join(directory, f))]
-        all_items.sort()
-
-        if not all_items:
-            console.print(f"No {item_type}s found in {directory}.", style='error')
-            return ""
-
-        def filter_items(items: List[str], search_term: str) -> List[str]:
-            search_term = search_term.lower()
-            return [item for item in items if search_term in item.lower()]
-
-        while True:
-            search_term = prompt.ask(f"[yellow]Enter search term for {item_type} (or press Enter to list all)[/]")
-
-            filtered_items = filter_items(all_items, search_term) if search_term else all_items
-
-            if not filtered_items:
-                console.print("[bold red]No matching items found. Please try again.[/]")
-                continue
-
-            table = Table(title=f"Available {item_type.capitalize()}s")
-            table.add_column("Index", justify="right", style="success", no_wrap=True)
-            table.add_column(item_type.capitalize(), style="success")
-
-            display_items = [os.path.splitext(item)[0] for item in filtered_items] if remove_extension else filtered_items
-
-            for i, item in enumerate(display_items):
-                table.add_row(str(i + 1), item)
-
-            console.print(table)
-
-            selection = prompt.ask(f"[yellow]Enter the index of the {item_type} to select (or press Enter to search again):[/]", default="", show_default=False)
-
-            if not selection:
-                continue  # Go back to search
-
-            try:
-                index = int(selection) - 1
-                if 0 <= index < len(filtered_items):
-                    return display_items[index]
-                else:
-                    console.print("[bold red]Invalid selection. Please enter a valid index.[/]")
-            except ValueError:
-                console.print("[bold red]Invalid input. Please enter a number or press Enter to search again.[/]")
-
-    except Exception as e:
-        console.print(f"[bold red]An unexpected error occurred: {e}[/]")
-        return ""
-
-def select_from_list_with_search(items: List[str], item_type: str) -> str:
-    """
-    Lists and allows the user to select an item from a list, with a search function.
-
-    Args:
-        items: The list of items to select from.
-        item_type: The type of item (e.g., "country", "place") for display purposes.
-
-    Returns:
-        The selected item, or an empty string if no item is selected.
-    """
-
-    def filter_items(items: List[str], search_term: str) -> List[str]:
-        search_term = search_term.lower()
-        return [item for item in items if search_term in item.lower()]
-
-    while True:
-        search_term = Prompt.ask(f"[yellow]Enter search term for {item_type} (or press Enter to list all):[/]")
-
-        filtered_items = filter_items(items, search_term) if search_term else items
-
-        if not filtered_items:
-            console.print("[bold red]No matching items found. Please try again.[/]")
-            continue
-
-        table = Table(title=f"Available {item_type.capitalize()}s")
-        table.add_column("Index", justify="right", style="success", no_wrap=True)
-        table.add_column(item_type.capitalize(), style="success")
-
-        for i, item in enumerate(filtered_items):
-            table.add_row(str(i + 1), item)
-
-        console.print(table)
-
-        selection = Prompt.ask(f"[yellow]Enter the index of the {item_type} to select (or press Enter to search again):[/]", default="", show_default=False)
-
-        if not selection:
-            continue  # Go back to search
-
-        try:
-            index = int(selection) - 1
-            if 0 <= index < len(filtered_items):
-                return filtered_items[index]
-            else:
-                console.print("[bold red]Invalid selection. Please enter a valid index.[/]")
-        except ValueError:
-            console.print("[bold red]Invalid input. Please enter a number or press Enter to search again.[/]")
-
-def load_timezone_data(zoneinfo_dir: str = "/usr/share/zoneinfo") -> List[Tuple[str, str]]:
-    """
-    Loads timezone data from the /usr/share/zoneinfo directory.
-
-    Args:
-        zoneinfo_dir: The directory containing the timezone data.
-
-    Returns:
-        A list of tuples, where each tuple contains (Country, Place).
-        Returns an empty list if an error occurs.
-    """
-    timezones: List[Tuple[str, str]] = []
-
-    try:
-        for country in os.listdir(zoneinfo_dir):
-            country_path = os.path.join(zoneinfo_dir, country)
-            if os.path.isdir(country_path) and country not in ["posix", "right"]:  # Exclude posix and right directories
-                for place in os.listdir(country_path):
-                    place_path = os.path.join(country_path, place)
-                    if os.path.isfile(place_path):
-                        timezones.append((country, place))
-        return timezones
-    except FileNotFoundError:
-        print(f"Error: Timezone directory '{zoneinfo_dir}' not found.")
-        return []
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return []
-
-def check_sudo():
-    """
-    Check that the software is running with sudo privileges.
-    If not, exit.
-    """
-
-    if os.getegid() == 0:
-        log.info("Script is running with sudo privileges.")
-    else:
-        log.critical("Application must run with sudo privileges.")
-        exit()
-
-def check_uefi():
-    """
-    Check that the system is running in UEFI mode (Unified Extensible Firmware Interface).
-    If not, exit.
-    """
-
-    if os.path.exists('/sys/firmware/efi/'):
-        log.info("System is booted in UEFI mode.")
-    else:
-        log.critical("System is NOT booted in UEFI mode (likely BIOS/Legacy mode).")
-        exit()
-
-def check_secure_boot():
-    """
-    Check that the system is running with Secure Boot
-    If not, exit.
-    """
-
-    try:
-        # Execute dmesg | grep -1 tpm
-        result = subprocess.run(
-            ['dmesg'],
-            capture_output=True,
-            text=True,
-            check=True          # Check for non-zero exit code
-        )
-        dmesg_output = result.stdout.strip()
-
-        grep_result = subprocess.run(
-            ['grep', '-i', 'tpm'],
-            input=dmesg_output,
-            capture_output=True,
-            text=True,
-            check=False          # Do Not check for non-zero exit code
-        )
-        grep_output = grep_result.stdout.strip()
-
-        if grep_output:
-            log.info('TPM (Trusted Platform Module) detected.')
-        else:
-            log.critical('TPM (Trusted Platform Module) not detected.')
-            exit()
-
-    except subprocess.CalledProcessError as e:
-        console.print(f'Error executing dmesg: {e}', style='critical')
-        exit()
-    except Exception as e:
-        console.print(f'An unexpected error occurred: {e}', style='critical')
-        exit()
-
-def select_drive() -> str:
-    """
-    Prompts the user to select a drive from the available block devices.
-
-    Uses lsblk and udevadm to gather device information and Rich library for interactive
-    console display and input.  Only returns the device path, the model is only shown
-    on the selection table.
-
-    Returns:
-        str: The full device name (e.g., "/dev/sda").
-             Returns "" if no valid device is selected or if an error occurs.
-    """
-
-    try:
-        # Execute lsblk to get block device information
-        result = subprocess.run(
-            ['lsblk', '-d', '-n', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-        devices: List[Tuple[str, str, str]] = []  # List of (name, size, mountpoint) tuples
-        for line in output.splitlines():
-            parts = line.split()
-            name = parts[0]
-            size = parts[1]
-            type = parts[2]
-            mountpoint = " ".join(parts[3:]) if len(parts) > 3 else ""  # Handles missing mountpoints
-            if type == 'disk':  # Only consider disks
-                devices.append((name, size, mountpoint))
-
-        if not devices:
-            console.print('No available disks found.', style='error')
-            return ""
-
-        device_models = {}  # Store device models, by name
-        for name, _, _ in devices:
-            try:
-                # Use udevadm to get the device model
-                udevadm_result = subprocess.run(
-                    ['udevadm', 'info', '--query=property', f'--name=/dev/{name}'],
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                udevadm_output = udevadm_result.stdout.strip()
-                model = None
-                for line in udevadm_output.splitlines():
-                    if line.startswith('ID_MODEL='):
-                        model = line[len('ID_MODEL='):].strip()
-                        break
-                device_models[name] = model if model else "Unknown Model"
-
-            except subprocess.CalledProcessError:
-                device_models[name] = "Unknown Model"
-            except Exception:
-                device_models[name] = "Unknown Model"
-
-        # Display the available drives in a table
-        table = Table(title="Available Disks")
-        table.add_column("Index", justify="right", style="cyan", no_wrap=True)
-        table.add_column("Device Name", style="success")
-        table.add_column("Size", style="success")
-        table.add_column("Mountpoint", style="success")
-        table.add_column("Model", style="success")
-
-        for i, (name, size, mountpoint) in enumerate(devices):
-            table.add_row(
-                str(i + 1),
-                f"/dev/{name}",
-                size,
-                mountpoint if mountpoint != '' else '[italic]None[/]',
-                device_models[name]  # Add the device model
-            )
-
-        console.print(table)
-
-        # Prompt the user to select a drive
-        while True:
-            try:
-                selection = Prompt.ask(
-                    "[yellow]Enter the index of the drive to select[/]",
-                    default="1",
-                    show_default=True
-                )
-                index = int(selection) - 1
-
-                if 0 <= index < len(devices):
-                    selected_device = devices[index][0]
-                    return f"/dev/{selected_device}"  # Only return device path now.
-                else:
-                    console.print('Invalid selection. Please enter a valid index.', style='error')
-            except ValueError:
-                console.print('Invalid input. Please enter a number.', style='error')
-
-    except subprocess.CalledProcessError as e:
-        console.print(f'Error executing lsblk: {e}', style='critical')
-        return ""
-    except Exception as e:
-        console.print(f'An unexpected error occurred: {e}', style='critical')
-        return ""
-
-def select_password(user_prompt: str, min_length: int = 8) -> str:
-    '''
-    Prompts the user to enter a password twice for confirmation, hiding the input
-    on the console. It retries until the two entries match and meet the minimum length requirement.
-
-    Args:
-        user_prompt (str): The prompt for the user to indicate what password is asked.
-        min_length (int):  The minimum length required for the password. Defaults to 8.
-
-    Returns:
-        str: The confirmed password.
-    '''
-
-    while True:
-        password = prompt.ask(f'[yellow]Enter the password for {user_prompt} (minimum {min_length} characters)[/]', password=True)
-        if len(password) < min_length:
-            console.print(f'Password must be at least {min_length} characters long. Please try again.', style='error')
-            continue
-
-        password_confirmation = prompt.ask(f'[yellow]Confirm the password for {user_prompt}[/]', password=True)
-
-        if password == password_confirmation:
-            return password
-        else:
-            console.print('Passwords do not match. Please try again.', style='error')
-
-def select_username() -> str:
-    '''
-    Prompts the user to enter a username. The username cannot be empty.
-    it continues prompting until a non-empty username is provided.
-
-    Returns:
-        str: The entered username.
-    '''
-    while True:
-        username = prompt.ask('[yellow]Enter username[/]')
-
-        if username.strip():
-            return username.strip()
-        else:
-            console.print('[bold red]Username cannot be empty. Try again.[/]')
-
-def select_country() -> Tuple[str, str]:
-    """
-    Uses the 'reflector --list-countries' command to display a list of countries
-    and allows the user to select one.
-
-    Returns:
-        Tuple[str, str]: A tuple containing the selected country name and code.
-                         Returns ("", "") if no country is selected or an error occurs.
-    """
-
-    try:
-        # Execute reflector --list-countries
-        result = subprocess.run(
-            ['reflector', '--list-countries'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-        lines = output.splitlines()
-
-        # Skip the header lines (based on the example output)
-        lines = lines[2:]  # Skip first 2 lines
-
-        countries: List[Tuple[str, str, str]] = []  # List of (Country, Code, Count) tuples
-        for line in lines:
-            parts = line.split(maxsplit=2)  # Split into 3 parts max
-            if len(parts) == 3:
-                country, code, count = parts
-                countries.append((country.strip(), code.strip(), count.strip()))
-
-        if not countries:
-            console.print("No countries found by reflector.", style='error')
-            return "", ""
-
-        # Display the countries in a table
-        table = Table(title="Available Countries")
-        table.add_column("Index", justify="right", style="success", no_wrap=True)
-        table.add_column("Country", style="success")
-        table.add_column("Code", style="success")
-        table.add_column("Count", style="success")
-
-        for i, (country, code, count) in enumerate(countries):
-            table.add_row(str(i + 1), country, code, count)
-
-        console.print(table)
-
-        # Prompt the user to select a country
-        while True:
-            try:
-                selection = Prompt.ask(
-                    "[yellow]Enter the index of the country to select:[/]",
-                    default="1",
-                    show_default=True
-                )
-                index = int(selection) - 1
-
-                if 0 <= index < len(countries):
-                    selected_country, selected_code, _ = countries[index]  # Get country and code
-                    return selected_country, selected_code.lower()
-                else:
-                    console.print("Invalid selection. Please enter a valid index.", style='error')
-            except ValueError:
-                console.print("Invalid input. Please enter a number.", style='error')
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing reflector: {e}", style='error')
-        return "", ""
-    except FileNotFoundError:
-        console.print("Error: reflector command not found. Please ensure reflector is installed.", style='critical')
-        return "", ""
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return "", ""
-
-def select_locale() -> str:
-    """
-    Lists and allows the user to select a locale from /usr/share/i18n/locales, with a search function.
-
-    Returns:
-        str: The selected locale name (e.g., "en_US").
-             Returns an empty string if no locale is selected or an error occurs.
-    """
-    return select_from_directory_with_search("/usr/share/i18n/locales", "Language (example: en_US)")
-
-
-def select_charmap() -> str:
-    """
-    Lists and allows the user to select a charmap from /usr/share/i18n/charmaps, with a search function.
-
-    Returns:
-        str: The selected charmap name (e.g., "UTF-8").
-             Returns an empty string if no charmap is selected or an error occurs.
-    """
-    return select_from_directory_with_search("/usr/share/i18n/charmaps", "Character Map (example: UTF-8)", remove_extension=True)
-
-
-def select_timezone() -> str:
-    """
-    Prompts the user to select a timezone in the format "Country/Place".
-
-    Returns:
-        The selected timezone string, or an empty string if no timezone is selected.
-    """
-
-    timezones = load_timezone_data()
-
-    if not timezones:
-        return ""
-
-    while True:
-        country = select_from_list_with_search(sorted(list(set([tz[0] for tz in timezones]))), "country")
-        if not country:
-            return ""
-
-        # Filter places based on the selected country
-        places = [tz[1] for tz in timezones if tz[0] == country]
-        place = select_from_list_with_search(sorted(places), "place")
-        if not place:
-            continue  # Go back to country selection if no place is selected
-
-        console.print(f"Selected timezone: {country}/{place}", style='success')
-        return f"{country}/{place}"
-
-
-def select_keyboard_layout() -> str:
-    """
-    Lists available keyboard layouts in pages and prompts the user to select one.
-
-    Returns:
-        The selected keyboard layout (e.g., "us", "de").
-        Returns an empty string if no keyboard is selected or an error occurs.
-    """
-
-    keyboards = get_keyboards()
-
-    if not keyboards:
-        return ""
-
-    PAGE_SIZE = 30
-    start_index = 0
-    while True:
-        end_index = min(start_index + PAGE_SIZE, len(keyboards))
-        page_keyboards = keyboards[start_index:end_index]
-
-        table = Table(title="Available Keyboard Layouts (Page)")
-        table.add_column("Index", justify="right", style="success", no_wrap=True)
-        table.add_column("Keyboard Layout", style="success")
-
-        for i, keyboard in enumerate(page_keyboards):
-            table.add_row(str(start_index + i + 1), keyboard)
-
-        console.print(table)
-
-        # Build Prompt
-        prompt_text = "[bold blue]Enter the index of the keyboard layout to select[/]\n"
-        if start_index > 0:
-            prompt_text += "[bold green](P)revious Page[/]\n"
-        if end_index < len(keyboards):
-            prompt_text += "[bold green](N)ext Page[/]\n"
-        prompt_text += "[bold blue]Selection[/]"
-
-        # Get User Input
-        selection = Prompt.ask(prompt_text, default="", show_default=False).lower()
-
-        # Check if a valid Keyboard Layout Number has been selected
-        if selection.isdigit():
-            index = int(selection) - 1
-            if start_index <= index < end_index:
-                return keyboards[index]
-            else:
-                console.print("Invalid selection. Please enter a valid index for this page.", style='error')
-
-        # Navigation Commands
-        elif selection == 'p' and start_index > 0:
-            start_index -= PAGE_SIZE
-        elif selection == 'n' and end_index < len(keyboards):
-            start_index += PAGE_SIZE
-        elif selection == 's':
-            search_term = Prompt.ask("[yellow]Enter search term for keyboard layout (or press Enter to list all):[/]")
-            filtered_keyboards = [kb for kb in keyboards if search_term.lower() in kb.lower()]
-            if not filtered_keyboards:
-                console.print("No matching layouts found. Please try again.", style='error')
-            else:
-                return select_keyboard_layout_from_list(filtered_keyboards)
-        else:
-            console.print("Invalid input. Please enter a number, 'P' for previous, or 'N' for next page.", style='error')
-
-
-def select_keyboard_layout_from_list(keyboards: List[str]) -> str:
-
-    if not keyboards:
-        console.print("[bold red]No keyboard layouts found.[/]")
-        return ""
-
-    table = Table(title="Available Keyboard Layouts")
-    table.add_column("Index", justify="right", style="cyan", no_wrap=True)
-    table.add_column("Keyboard Layout", style="magenta")
-
-    for i, keyboard in enumerate(keyboards):
-        table.add_row(str(i + 1), keyboard)
-
-    console.print(table)
-
-    while True:
-        selection = Prompt.ask("[yellow]Enter the index of the keyboard layout to select:[/]", default="1", show_default=True)
-        try:
-            index = int(selection) - 1
-            if 0 <= index < len(keyboards):
-                return keyboards[index]
-            else:
-                console.print("Invalid selection. Please enter a valid index.", style='error')
-        except ValueError:
-            console.print("Invalid input. Please enter a number.", style='error')
-        except Exception as e:
-            console.print(f"An unexpected error occurred: {e}", style='critical')
-            return ""
-
-
-#----------------------------------------------------------------------------------------------------------------------
-# Command functions
-#----------------------------------------------------------------------------------------------------------------------
 def copy_file_structure(source: str, destination: str) -> None:
     """
     Copies the file structure (folders and files) from a source directory to a
@@ -1046,6 +932,9 @@ def copy_file_structure(source: str, destination: str) -> None:
         log.exception('An unexpected error occurred')
         return -1, "", str(e)
 
+#----------------------------------------------------------------------------------------------------------------------
+# Command function
+#----------------------------------------------------------------------------------------------------------------------
 def run_bash(description :str, command :str, input=None, output_var=None, check_returncode: bool=True, use_strict_mode: bool = True, **kwargs):
     '''
     Execute a bash command with optional input from stdin and return the return code, output and error.
@@ -1164,43 +1053,66 @@ def run_bash(description :str, command :str, input=None, output_var=None, check_
 
 if __name__ == '__main__':
 
+#-- Create objects ------------------------------------------------------------
+    console = Console(theme=theme)
     console.clear()
+
+    prompt = Prompt()
+
+    handler = RichHandler(
+        rich_tracebacks=True,       # Show rich debug info during error
+        markup=True,                # Show data as Markup
+        show_time=False,            # Do not show logging time
+        show_level=True,            # Do show logging level (Info, debug, etc)
+        show_path=False)            # Do not show file causing log - always the same
+    handler.setFormatter(CustomFormatter())
+
+    log = logging.getLogger("rich")
+    log.setLevel(logging.INFO)
+    log.addHandler(handler)
+
+    user_entry = UserEntry()
 
 #-- System check  -------------------------------------------------------------
     console.print(Rule("System Check"), style='success')
 
     # Must be in place for script to work
-    check_sudo()
-    check_uefi()
-    check_secure_boot()
+    SYSTEM_CHECK = True
+    SYSTEM_CHECK = SYSTEM_CHECK and check_sudo()
+    SYSTEM_CHECK = SYSTEM_CHECK and check_uefi()
+    SYSTEM_CHECK = SYSTEM_CHECK and check_secure_boot()
 
     # Unmount devices from potential previous attempts that failed
     run_bash('Swapfiles deactivated','swapoff -a', check_returncode=False)
     run_bash('Partitions unmounted', 'umount --recursive /mnt', check_returncode=False)
     run_bash('Encrypted drives closed', 'cryptsetup luksClose {PART_1_UUID}', check_returncode=False)
 
-#-- User input ----------------------------------------------------------------
+    if not SYSTEM_CHECK:
+        exit()
+
+    if Prompt.ask('\nSystem configuration correct. Continue installation?', choices=['y', 'n']) == 'n':
+        exit()
+
+#-- User Entry ----------------------------------------------------------------
 
     console.print(Rule("User selections for installation"), style='success')
+
+    if not DRIVE: DRIVE = user_entry.configure_drive()
+    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = user_entry.run_yesno("Disk Configuration", "Write random data to entire drive (lengthy operation)?")
+    if not USER_NAME: USER_NAME = user_entry.configure_username()
+    if not USER_PASSWORD: USER_PASSWORD = user_entry.configure_userpassword()
+    if not LUKS_PASSWORD: LUKS_PASSWORD = user_entry.configure_lukspassword()
+    if not SYSTEM_HOSTNAME: SYSTEM_HOSTNAME = user_entry.configure_hostname()
+    if not SYSTEM_LOCALE: SYSTEM_LOCALE = user_entry.configure_locale()
+    if not SYSTEM_KEYB: SYSTEM_KEYB = user_entry.configure_keyboard()
+    if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = user_entry.configure_timezone()
+    if not SYSTEM_COUNTRY: SYSTEM_COUNTRY = user_entry.configure_country()
+    if not SYSTEM_GPU_INT: SYSTEM_GPU_INT = user_entry.run_yesno('Video configuration', 'Is the GPU integrated in the CPU?[/]')
 
     # Get system details
     if not SYSTEM_CPU:  SYSTEM_CPU  = get_cpu_brand()
     if not SYSTEM_GPU:  SYSTEM_GPU  = get_graphics_card_brand()
-    if not SYSTEM_GPU_INT: SYSTEM_GPU_INT = prompt.ask('[yellow]Is the GPU integrated in the CPU?[/]', choices=['y','n'])
     if not SYSTEM_VIRT: SYSTEM_VIRT = get_virtualizer().capitalize()
-
-    # Get user options
-    if not DRIVE: DRIVE = select_drive()
-    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = ask_yes_no('Write random data to disk (lengthy)')
-    if not USER_NAME: USER_NAME = select_username()
-    if not USER_PASSWORD: USER_PASSWORD = select_password('User', min_length=3)
-    if not LUKS_PASSWORD: LUKS_PASSWORD = select_password('Luks', min_length=3)
-    if not SYSTEM_HOSTNAME: SYSTEM_HOSTNAME = 'archlinux' # TODO
-    if not SYSTEM_LOCALE: SYSTEM_LOCALE = select_locale()
-    if not SYSTEM_CHARMAP: SYSTEM_CHARMAP = select_charmap()
-    if not SYSTEM_KEYB: SYSTEM_KEYB = select_keyboard_layout()
-    if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = select_timezone()
-    if not SYSTEM_COUNTRY: SYSTEM_COUNTRY, SYSTEM_COUNTRY_CODE = select_country()
 
 #-- User validation -----------------------------------------------------------
 
@@ -1215,6 +1127,11 @@ if __name__ == '__main__':
         console.print(f'GPU .................: [green]{SYSTEM_GPU}[/]', style='info')
     else:
         console.print('GPU not detected', style='critical')
+
+    if SYSTEM_GPU_INT:
+        console.print(f'Internal GPU ........: [green]{SYSTEM_GPU_INT}[/]', style='info')
+    else:
+        console.print('GPU internal not selected', style='critical')
 
     if SYSTEM_VIRT:
         console.print(f'Virtualiser .........: [green]{SYSTEM_VIRT}[/]', style='info')
@@ -1239,11 +1156,6 @@ if __name__ == '__main__':
     else:
         console.print('No locale selected.', style='critical')
 
-    if SYSTEM_CHARMAP:
-        console.print(f'Selected charmap ....: [green]{SYSTEM_CHARMAP}[/]', style='info')
-    else:
-        console.print('No charmap selected.', style='critical')
-
     if SYSTEM_KEYB:
         console.print(f'Selected keymap .....: [green]{SYSTEM_KEYB}[/]', style='info')
     else:
@@ -1256,7 +1168,6 @@ if __name__ == '__main__':
 
     if SYSTEM_COUNTRY:
         console.print(f'Selected country ....: [green]{SYSTEM_COUNTRY}[/]', style='info')
-        console.print(f'Selected country code: [green]{SYSTEM_COUNTRY_CODE}[/]', style='info')
     else:
         console.print('No country selected.', style='critical')
 
@@ -1274,8 +1185,7 @@ if __name__ == '__main__':
     run_bash('Set the time server', 'timedatectl set-ntp true')
     run_bash('Synchronise system clock', 'hwclock --systohc --utc')
     run_bash('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
-    run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector terminus-font wget')
-    # run_bash('Setting the system font', 'setfont {SYSTEM_FONT}')
+    run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector terminus-font wget mg')
     run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
@@ -1395,7 +1305,7 @@ if __name__ == '__main__':
     run_bash('Set the system font to "{SYSTEM_FONT}"', 'echo "FONT={SYSTEM_FONT}" >/mnt/etc/vconsole.conf')
     run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTEM_KEYB}" >>/mnt/etc/vconsole.conf')
     run_bash('Set the hostname to {SYSTEM_HOSTNAME}', 'echo "{SYSTEM_HOSTNAME}" >/mnt/etc/hostname')
-    run_bash('Set the language to {SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}', 'echo "{SYSTEM_LOCALE}.{SYSTEM_CHARMAP} {SYSTEM_CHARMAP}" >>/mnt/etc/locale.gen')
+    run_bash('Set the language to {SYSTEM_LOCALE}', 'echo "{SYSTEM_LOCALE}" >>/mnt/etc/locale.gen')
     run_bash('Set the timezone to {SYSTEM_TIMEZONE}', 'ln -sf /usr/share/zoneinfo/{SYSTEM_TIMEZONE} /mnt/etc/localtime')
     run_bash('Generate locale', 'arch-chroot /mnt locale-gen')
 
