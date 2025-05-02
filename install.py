@@ -33,6 +33,10 @@
 # Todos:
 # - [X] Use 'dialog' for the user input
 # - [ ] Use Luks 2 for encryption
+# - [ ] copy_file_structure uses old logging style
+#       INFO     Copying file from rootfs to /mnt
+#       INFO:rich:[yellow]Copying file from rootfs to /mnt[/yellow]
+# - [X]  arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -41,6 +45,9 @@ import logging
 import subprocess
 from typing import List
 from rich.console import Console
+from rich.panel import Panel
+from rich.style import Style
+from rich.text import Text
 from rich.theme import Theme
 from rich.prompt import Prompt
 from rich.rule import Rule
@@ -53,8 +60,8 @@ STEP = False                   # If true, step one command at the time
 
 # Global Constants
 SYSTEM_FONT = 'ter-132n'       # System font ('ter-132n' , 'ter-716n')
-PART_1_NAME = "primary"
-PART_2_NAME = "esp"
+PART_1_NAME = "PRIMARY"
+PART_2_NAME = "ESP"
 PART_1_UUID = 'archlinux'      # Name of volume 1 (archlinux)
 PART_2_UUID = 'esp'            # Name of volume 2 (esp)
 SYSTEM_LOG_FILE ='install.log' # Set to None to disable or with a string "install.log"
@@ -88,7 +95,7 @@ SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
 # LUKS_PASSWORD = '123'           # Luks password for drive(s)
 # SYSTEM_HOSTNAME = 'archlinux'   # System host name
 # SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
-# SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
+SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
 # SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
 # SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
@@ -181,9 +188,6 @@ def check_secure_boot():
     except Exception as e:
         console.print(f'An unexpected error occurred: {e}', style='critical')
         exit()
-
-
-
 
 #----------------------------------------------------------------------------------------------------------------------
 # User Entry class
@@ -669,6 +673,162 @@ class UserEntry:
 
 
 #----------------------------------------------------------------------------------------------------------------------
+# Shell Commands with feedback formatting
+#----------------------------------------------------------------------------------------------------------------------
+class ShellCommandExecutor:
+    """
+    A class to execute shell commands with rich console output and logging.
+    """
+
+    def __init__(self, debug=False, theme=None):
+        """
+        Initializes the ShellCommandExecutor.
+
+        Args:
+            debug (bool, optional): Enables debug output. Defaults to False.
+            theme (dict, optional): A dictionary defining the theme for rich console. Defaults to None.
+        """
+        if theme is None:
+            theme = {
+                "success": "green",
+                "failure": "red",
+                "warning": "yellow",
+                "info": "cyan",
+                "command": "cyan",
+                "stdout": "white",
+                "stderr": "red",
+            }
+
+        custom_theme = Theme(theme)
+        self.console = Console(theme=custom_theme)
+        self.debug = debug
+        self.theme = theme
+
+    def _substitute_globals(self, text):
+        """
+        Substitutes global variable values in the given text.
+
+        Args:
+            text (str): The text to perform substitution on.
+
+        Returns:
+            str: The text with global variables substituted.
+        """
+        if not isinstance(text, str):
+            return text
+
+        for name, value in globals().items():
+            if isinstance(value, (int, float, str, bool)):
+                text = text.replace(f"${name}", str(value))
+        return text
+
+    def execute(self, description, command, input=None, output_var=None, check_returncode=True, strict=False):
+        """
+        Executes a shell command.
+
+        Args:
+            description (str): Description of the command.
+            command (str): The shell command to execute.
+            input (str, optional): Input for the command. Defaults to None.
+            output_var (str, optional): Global variable to store the output. Defaults to None.
+            check_returncode (bool, optional): If True, raises an exception on non-zero return code. Defaults to True.
+            strict (bool, optional): when strict is True the shell command is strict with "set -euo pipefail' (bool - optional - default False)
+
+        Returns:
+            bool: True if the command was successful, False otherwise.
+        """
+        description = self._substitute_globals(description)
+        command = self._substitute_globals(command)
+        if input: input = self._substitute_globals(input)
+
+        try:
+            # Print description to console
+            self.console.print(f"[{self.theme['warning']}][ ]{description}[/{self.theme['warning']}]", end='\r')
+
+            if self.debug:
+                self.console.print(Panel(f"[{self.theme['command']}]{command}[/{self.theme['command']}]", title="Command"))
+
+            shell_command = command
+            if strict:
+                shell_command = 'set -euo pipefail;' + command
+
+            process = subprocess.Popen(
+                shell_command,
+                shell=True,
+                stdin=subprocess.PIPE if input else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                executable='/bin/bash'
+            )
+
+            stdout, stderr = process.communicate(input=input.encode() if input else None)
+            stdout_str = stdout.decode().strip()
+            stderr_str = stderr.decode().strip()
+
+            returncode = process.returncode
+
+            if self.debug:
+                output_panel = Panel(
+                    Text.assemble(
+                        ("STDOUT:\n", "bold"),
+                        (stdout_str, self.theme['stdout']),
+                        ("\n\nSTDERR:\n", "bold"),
+                        (stderr_str, self.theme['stderr']),
+                        style=Style(color="white")
+                    ),
+                    title="Output"
+                )
+                # Only print output when present
+                if stdout_str or stderr_str:
+                    self.console.print(output_panel)
+
+            if check_returncode and returncode != 0:
+                self.console.print(f"[{self.theme['failure']}]✗ {description}[/{self.theme['failure']}]")
+                logging.error(f"Command failed: {command}")
+                logging.error(f"Return code: {returncode}")
+                logging.error(f"Stdout: {stdout_str}")
+                logging.error(f"Stderr: {stderr_str}")
+                exit()  # Indicate failure
+            else:
+                if check_returncode:
+                    self.console.print(f"[{self.theme['success']}][✓] {description}[/{self.theme['success']}]")
+                else:
+                    self.console.print(f"[{self.theme['warning']}][✓] {description} (return code ignored)[/{self.theme['warning']}]")
+
+            # Store output in global variable if specified
+            if output_var:
+                globals()[output_var] = stdout_str
+                logging.debug(f"Stored output in global variable '{output_var}'")
+
+            logging.info(f"Command executed successfully: {command}")
+            return True  # Indicate success
+
+        except Exception as e:
+            self.console.print(f"[{self.theme['failure']}][✗] {description}[/{self.theme['failure']}]")
+            logging.exception(f"Exception while executing command: {command}")
+            if self.debug:
+                self.console.print_exception(show_locals=True)
+            return False  # Indicate failure
+
+    def execute_all(self, commands):
+        """
+        Executes a list of shell commands.
+
+        Args:
+            commands (list): A list of dictionaries, where each dictionary contains the arguments for the 'execute' method.
+
+        Returns:
+            bool: True if all commands were successful, False otherwise.
+        """
+        all_successful = True
+        for command_data in commands:
+            if not self.execute(**command_data):
+                all_successful = False
+        return all_successful
+
+
+
+#----------------------------------------------------------------------------------------------------------------------
 # System Functions
 #----------------------------------------------------------------------------------------------------------------------
 def get_cpu_brand() -> str:
@@ -1073,6 +1233,8 @@ if __name__ == '__main__':
 
     user_entry = UserEntry()
 
+    shell = ShellCommandExecutor(debug=True)
+
 #-- System check  -------------------------------------------------------------
     console.print(Rule("System Check"), style='success')
 
@@ -1081,11 +1243,6 @@ if __name__ == '__main__':
     SYSTEM_CHECK = SYSTEM_CHECK and check_sudo()
     SYSTEM_CHECK = SYSTEM_CHECK and check_uefi()
     SYSTEM_CHECK = SYSTEM_CHECK and check_secure_boot()
-
-    # Unmount devices from potential previous attempts that failed
-    run_bash('Swapfiles deactivated','swapoff -a', check_returncode=False)
-    run_bash('Partitions unmounted', 'umount --recursive /mnt', check_returncode=False)
-    run_bash('Encrypted drives closed', 'cryptsetup luksClose {PART_1_UUID}', check_returncode=False)
 
     if not SYSTEM_CHECK:
         exit()
@@ -1096,16 +1253,16 @@ if __name__ == '__main__':
 #-- System Preparation and Checks  --------------------------------------------
     console.print(Rule("System Preparation"), style='success')
 
-    run_bash('Set the time server', 'timedatectl set-ntp true')
-    run_bash('Synchronise system clock', 'hwclock --systohc --utc')
-    run_bash('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
-    run_bash('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector dialog terminus-font wget mg')
-    run_bash('Get local mirrors', 'reflector --country {SYSTEM_COUNTRY} --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
+    shell.execute('Set the time server', 'timedatectl set-ntp true')
+    shell.execute('Synchronise system clock', 'hwclock --systohc --utc')
+    shell.execute('Update the ISO keyring', 'pacman -Sy --noconfirm --needed archlinux-keyring')
+    shell.execute('Install basic tools', 'pacman -Sy --noconfirm --needed git reflector dialog terminus-font wget mg')
 
 #-- User Entry ----------------------------------------------------------------
 
     console.print(Rule("User selections for installation"), style='success')
 
+    user_entry.configure_font()
     if not DRIVE: DRIVE = user_entry.configure_drive()
     if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = user_entry.run_yesno("Disk Configuration", "Write random data to entire drive (lengthy operation)?")
     if not USER_NAME: USER_NAME = user_entry.configure_username()
@@ -1192,67 +1349,72 @@ if __name__ == '__main__':
     console.print(Rule("System Installation"), style='success')
 
     # Write random data to the whole disk
-    if SYSTEM_WIPE_DISK: run_bash('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of={DRIVE}', check_returncode=False)
-    run_bash('Disk - Remove file magic bytes','wipefs --all {DRIVE}')
+    if SYSTEM_WIPE_DISK: shell.execute('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of=$DRIVE', check_returncode=False)
+    shell.execute('Disk - Remove file magic bytes','wipefs --all $DRIVE')
 
     # Create partition table and name partitions
-    run_bash('Partitioning - Create partition table', 'sgdisk --clear {DRIVE} --new 1::-551MiB --new 2::0 --typecode 2:ef00 {DRIVE}')
-    run_bash('Partitioning - Name the partitions', 'sgdisk {DRIVE} --change-name=1:{PART_1_NAME} --change-name=2:{PART_2_NAME}')
+    shell.execute('Partitioning - Create partition table', 'sgdisk --clear $DRIVE --new 1::-551MiB --new 2::0 --typecode 2:ef00 $DRIVE')
+    shell.execute('Partitioning - Name the partitions', 'sgdisk $DRIVE --change-name=1:$PART_1_NAME --change-name=2:$PART_2_NAME')
 
     # Format partitions
     # -- partition 2 - Root  ---------------------------------------------------
-    run_bash('Partition 2 - Formatting {PART_2_NAME}','mkfs.vfat -n {PART_2_NAME} -F 32 {DRIVE}2')
+    shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $DRIVE2')
     # TODO - remove and remve PART_2_UUID variable
-    # run_bash('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
+    # shell.execute('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
 
 ##- partition 1 ---------------------------------------------------------------
+    # Unmount devices from potential previous attempts that failed
+    shell.execute('Swapfiles deactivated','swapoff -a', check_returncode=False)
+    shell.execute('Partitions unmounted', 'umount --recursive /mnt', check_returncode=False)
+    shell.execute('Encrypted drives closed', 'cryptsetup luksClose $PART_1_UUID', check_returncode=False)
+    shell.execute('Get local mirrors', 'reflector --country $SYSTEM_COUNTRY --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
-    run_bash('Partition 1 - Format to Luks {PART_1_NAME}','cryptsetup luksFormat -q --type luks1 --label {PART_1_UUID} {DRIVE}1',input="{LUKS_PASSWORD}")
-    run_bash('Partition 1 - Open {PART_1_NAME}', 'cryptsetup luksOpen {DRIVE}1 {PART_1_UUID}' ,input="{LUKS_PASSWORD}")
+    shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE1',input="$LUKS_PASSWORD")
+    shell.execute('Partition 1 - Open $PART_1_NAME', 'cryptsetup luksOpen $DRIVE1 $PART_1_UUID' ,input="$LUKS_PASSWORD")
 
-    run_bash('Partition 1 - Set file system {PART_1_NAME} to BTRFS', 'mkfs.btrfs --label {PART_1_UUID} /dev/mapper/{PART_1_UUID}')
-    run_bash('Partition 1 - Mount {PART_1_NAME}', 'mount /dev/mapper/{PART_1_UUID} /mnt')
-    run_bash('Partition 1 - Create subvolume @',                   'btrfs subvolume create /mnt/@')
-    run_bash('Partition 1 - Create subvolume @home',               'btrfs subvolume create /mnt/@home')
-    run_bash('Partition 1 - Create subvolume @swap',               'btrfs subvolume create /mnt/@swap')
-    run_bash('Partition 1 - Create subvolume @snapshots',          'btrfs subvolume create /mnt/@snapshots')
-    run_bash('Partition 1 - Create subvolume @home-snapshots',     'btrfs subvolume create /mnt/@home-snapshots')
-    run_bash('Partition 1 - Create subvolume @cache-pacman-pkgs',  'btrfs subvolume create /mnt/@cache-pacman-pkgs')
-    run_bash('Partition 1 - Create subvolume @var',                'btrfs subvolume create /mnt/@var')
-    run_bash('Partition 1 - Create subvolume @var-lib-libvirt',    'btrfs subvolume create /mnt/@libvirt')
-    run_bash('Partition 1 - Create subvolume @var-lib-docker',     'btrfs subvolume create /mnt/@docker')
-    run_bash('Partition 1 - Create subvolume @var-log',            'btrfs subvolume create /mnt/@var-log')
-    run_bash('Partition 1 - Create subvolume @var-tmp',            'btrfs subvolume create /mnt/@var-tmp')
-    run_bash('Partition 1 - Umount {PART_1_NAME}', 'umount /mnt')
+    shell.execute('Partition 1 - Set file system $PART_1_NAME to BTRFS', 'mkfs.btrfs --label $PART_1_UUID /dev/mapper/$PART_1_UUID')
+    shell.execute('Partition 1 - Mount $PART_1_NAME', 'mount /dev/mapper/$PART_1_UUID /mnt')
+    shell.execute('Partition 1 - Create subvolume @',                   'btrfs subvolume create /mnt/@')
+    shell.execute('Partition 1 - Create subvolume @home',               'btrfs subvolume create /mnt/@home')
+    shell.execute('Partition 1 - Create subvolume @swap',               'btrfs subvolume create /mnt/@swap')
+    shell.execute('Partition 1 - Create subvolume @snapshots',          'btrfs subvolume create /mnt/@snapshots')
+    shell.execute('Partition 1 - Create subvolume @home-snapshots',     'btrfs subvolume create /mnt/@home-snapshots')
+    shell.execute('Partition 1 - Create subvolume @cache-pacman-pkgs',  'btrfs subvolume create /mnt/@cache-pacman-pkgs')
+    shell.execute('Partition 1 - Create subvolume @var',                'btrfs subvolume create /mnt/@var')
+    shell.execute('Partition 1 - Create subvolume @var-lib-libvirt',    'btrfs subvolume create /mnt/@libvirt')
+    shell.execute('Partition 1 - Create subvolume @var-lib-docker',     'btrfs subvolume create /mnt/@docker')
+    shell.execute('Partition 1 - Create subvolume @var-log',            'btrfs subvolume create /mnt/@var-log')
+    shell.execute('Partition 1 - Create subvolume @var-tmp',            'btrfs subvolume create /mnt/@var-tmp')
+    shell.execute('Partition 1 - Umount $PART_1_NAME', 'umount /mnt')
 
     # Copy-on-Write is not good for big files that are written multiple times.
     # This includes: logs, containers, virtual machines, databases, etc.
     # They usually lie in /var, therefore CoW will be disabled for everything in /var
     # Note that currently btrfs does not support the nodatacow mount option.
-    run_bash('Partition 1 - Mount @',                  'mount         -o subvol=@,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt')
-    run_bash('Partition 1 - Mount @home',              'mount --mkdir -o subvol=@home,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home')
-    run_bash('Partition 1 - Mount @swap',              'mount --mkdir -o subvol=@swap,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.swap')
-    run_bash('Partition 1 - Mount @snaphots',          'mount --mkdir -o subvol=@snapshots,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/.snapshots')
-    run_bash('Partition 1 - Mount @home-snapshots',    'mount --mkdir -o subvol=@home-snapshots,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/home/.snaphots')
-    run_bash('Partition 1 - Mount @var',               'mount --mkdir -o subvol=@var,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var')
+    shell.execute('Partition 1 - Mount @',                  'mount         -o subvol=@,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt')
+    shell.execute('Partition 1 - Mount @home',              'mount --mkdir -o subvol=@home,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/home')
+    shell.execute('Partition 1 - Mount @swap',              'mount --mkdir -o subvol=@swap,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/.swap')
+    shell.execute('Partition 1 - Mount @snaphots',          'mount --mkdir -o subvol=@snapshots,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/.snapshots')
+    shell.execute('Partition 1 - Mount @home-snapshots',    'mount --mkdir -o subvol=@home-snapshots,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/home/.snaphots')
+    shell.execute('Partition 1 - Mount @var',               'mount --mkdir -o subvol=@var,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/var')
 
-    run_bash('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
-    run_bash('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/log')
-    run_bash('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/tmp')
-    run_bash('Partition 1 - Mount @var-lib-libvirt',   'mount --mkdir -o subvol=@libvirt,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/libvirt')
-    run_bash('Partition 1 - Mount @var-lib-docker',    'mount --mkdir -o subvol=@docker,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/var/lib/docker')
-    run_bash('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-pkgs,{BTRFS_MOUNT_OPT} /dev/mapper/{PART_1_UUID} /mnt/cache/pacman/pkgs')
+    shell.execute('Partition 1 - Disable CoW on /var/',  'chattr +C /mnt/var')
+    shell.execute('Partition 1 - Mount @var-log',           'mount --mkdir -o subvol=@var-log,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/var/log')
+    shell.execute('Partition 1 - Mount @var-tmp',           'mount --mkdir -o subvol=@var-tmp,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/var/tmp')
+    shell.execute('Partition 1 - Mount @var-lib-libvirt',   'mount --mkdir -o subvol=@libvirt,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/var/lib/libvirt')
+    shell.execute('Partition 1 - Mount @var-lib-docker',    'mount --mkdir -o subvol=@docker,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/var/lib/docker')
+    shell.execute('Partition 1 - Mount @cache-pacman-pkgs', 'mount --mkdir -o subvol=@cache-pacman-pkgs,$BTRFS_MOUNT_OPT /dev/mapper/$PART_1_UUID /mnt/cache/pacman/pkgs')
 
 ##- partition 2 ---------------------------------------------------------------
 
-    run_bash('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 {DRIVE}2 /mnt/efi')
+    shell.execute('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 $DRIVE2 /mnt/efi')
 
 ##- swap file -----------------------------------------------------------------
 
-    run_bash('Swapfile creation','btrfs filesystem mkswapfile /mnt/.swap/swapfile')
+    shell.execute('Swapfile creation','btrfs filesystem mkswapfile /mnt/.swap/swapfile')
     # Faults occasionally, and documentation indicates not necessary
-    # run_bash('Swapfile make','mkswap /mnt/.swap/swapfile')
-    run_bash('Swapfile on','swapon /mnt/.swap/swapfile')
+    # shell.execute('Swapfile make','mkswap /mnt/.swap/swapfile')
+    shell.execute('Swapfile on','swapon /mnt/.swap/swapfile')
 
 #-- Install Linux Packages  ---------------------------------------------------
 
@@ -1270,7 +1432,7 @@ if __name__ == '__main__':
         if SYSTEM_GPU == 'NVIDIA'  : packages.append('vulkan-nouveau')
 
     SYSTEM_PKGS = ' '.join(packages)
-    run_bash('Installing Linux packages .... (patience)', 'pacstrap -K /mnt {SYSTEM_PKGS}')
+    shell.execute('Installing Linux packages .... (patience)', 'pacstrap -K /mnt $SYSTEM_PKGS')
 
 #-- Copy config files  --------------------------------------------------------
 
@@ -1278,11 +1440,11 @@ if __name__ == '__main__':
 
 #-- Patch config files  -------------------------------------------------------
 
-    run_bash('Copy mirror list', 'cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/')
-    run_bash('Patch pacman configuration -colours', 'sed -i "s/#Color/Color/g" /mnt/etc/pacman.conf')
-    run_bash('Patch qemu configuration - user', 'sed -i "s/username_placeholder/{USER_NAME}/g" /mnt/etc/libvirt/qemu.conf')
-    run_bash('Patch tty configuration - user', 'sed -i "s/username_placeholder/{USER_NAME}/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
-    run_bash('Patch shell - dash', 'ln -sfT dash /mnt/usr/bin/sh')
+    shell.execute('Copy mirror list', 'cp /etc/pacman.d/mirrorlist /mnt/etc/pacman.d/')
+    shell.execute('Patch pacman configuration -colours', 'sed -i "s/#Color/Color/g" /mnt/etc/pacman.conf')
+    shell.execute('Patch qemu configuration - user', 'sed -i "s/username_placeholder/$USER_NAME/g" /mnt/etc/libvirt/qemu.conf')
+    shell.execute('Patch tty configuration - user', 'sed -i "s/username_placeholder/$USER_NAME/g" /mnt/etc/systemd/system/getty@tty1.service.d/autologin.conf')
+    shell.execute('Patch shell - dash', 'ln -sfT dash /mnt/usr/bin/sh')
 
 #-- Write Kernel Command Line  ------------------------------------------------
 
@@ -1290,8 +1452,8 @@ if __name__ == '__main__':
     SYSTEM_CMD = [
         'lsm=landlock,lockdown,yama,integrity,apparmor,bpf', # Customize Linux Security Modules to include AppArmor
         'lockdown=integrity',                                # Put kernel in integrity lockdown mode
-        f'cryptdevice={DRIVE}1:{PART_1_UUID}',               # The LUKS device to decrypt
-        f'root=/dev/mapper/{PART_1_UUID}',                   # The decrypted device to mount as the root
+        f'cryptdevice=$DRIVE1:$PART_1_UUID',               # The LUKS device to decrypt
+        f'root=/dev/mapper/$PART_1_UUID',                   # The decrypted device to mount as the root
         'rootflags=subvol=@',                                # Mount the @ btrfs subvolume inside the decrypted device as the root
         'mem_sleep_default=deep',                            # Allow suspend state (puts device into sleep but keeps powering the RAM for fast sleep mode recovery)
         'audit=1',                                           # Ensure that all processes that run before the audit daemon starts are marked as auditable by the kernel
@@ -1303,55 +1465,55 @@ if __name__ == '__main__':
 
 #-- Set Locale etc  -----------------------------------------------------------
 
-    run_bash('Set the system font to "{SYSTEM_FONT}"', 'echo "FONT={SYSTEM_FONT}" >/mnt/etc/vconsole.conf')
-    run_bash('Set the system keyboard to "{SYSTEM_KEYB}"', 'echo "KEYMAP={SYSTEM_KEYB}" >>/mnt/etc/vconsole.conf')
-    run_bash('Set the hostname to {SYSTEM_HOSTNAME}', 'echo "{SYSTEM_HOSTNAME}" >/mnt/etc/hostname')
-    run_bash('Set the language to {SYSTEM_LOCALE}', 'echo "{SYSTEM_LOCALE}" >>/mnt/etc/locale.gen')
-    run_bash('Set the timezone to {SYSTEM_TIMEZONE}', 'ln -sf /usr/share/zoneinfo/{SYSTEM_TIMEZONE} /mnt/etc/localtime')
-    run_bash('Generate locale', 'arch-chroot /mnt locale-gen')
+    shell.execute('Set the system font to "$SYSTEM_FONT"', 'echo "FONT=$SYSTEM_FONT" >/mnt/etc/vconsole.conf')
+    shell.execute('Set the system keyboard to "$SYSTEM_KEYB"', 'echo "KEYMAP=$SYSTEM_KEYB" >>/mnt/etc/vconsole.conf')
+    shell.execute('Set the hostname to $SYSTEM_HOSTNAME', 'echo "$SYSTEM_HOSTNAME" >/mnt/etc/hostname')
+    shell.execute('Set the language to $SYSTEM_LOCALE', 'echo "$SYSTEM_LOCALE" >>/mnt/etc/locale.gen')
+    shell.execute('Set the timezone to $SYSTEM_TIMEZONE', 'ln -sf /usr/share/zoneinfo/$SYSTEM_TIMEZONE /mnt/etc/localtime')
+    shell.execute('Generate locale', 'arch-chroot /mnt locale-gen')
 
 #-- Generate fstab  -----------------------------------------------------------
 
-    run_bash('Generate fstab', 'genfstab -U /mnt >>/mnt/etc/fstab')
+    shell.execute('Generate fstab', 'genfstab -U /mnt >>/mnt/etc/fstab')
 
 #-- Configure Plymouth  -------------------------------------------------------
 
-    run_bash('Suppress login screens', 'touch /mnt/etc/hushlogins')
-    run_bash('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' /mnt/etc/login.defs")
+    shell.execute('Suppress login screens', 'touch /mnt/etc/hushlogins')
+    shell.execute('Clean login experience on TTY and SSH', "sed -i 's/^HUSHLOGIN_FILE.*/#&/g' /mnt/etc/login.defs")
 
 #-- User and Group accounts  --------------------------------------------------
 
     # Create user (USER_NAME), set shell to Bourne Shell (dash), create home folder
-    run_bash('Add user account for {USER_NAME}', 'arch-chroot /mnt useradd -m -s /bin/sh {USER_NAME}')
+    shell.execute('Add user account for $USER_NAME', 'arch-chroot /mnt useradd -m -s /bin/sh $USER_NAME')
     # Force creation of system groups (for services)
-    run_bash('Create group wheel', 'arch-chroot /mnt groupadd -rf wheel')
-    run_bash('Create group audit', 'arch-chroot /mnt groupadd -rf audit')
-    run_bash('Create group libvirt', 'arch-chroot /mnt groupadd -rf libvirt')
-    run_bash('Create group firejail', 'arch-chroot /mnt groupadd -rf firejail')
-    run_bash('Create group allow-internet', 'arch-chroot /mnt groupadd -rf allow-internet')
+    shell.execute('Create group wheel', 'arch-chroot /mnt groupadd -rf wheel')
+    shell.execute('Create group audit', 'arch-chroot /mnt groupadd -rf audit')
+    shell.execute('Create group libvirt', 'arch-chroot /mnt groupadd -rf libvirt')
+    shell.execute('Create group firejail', 'arch-chroot /mnt groupadd -rf firejail')
+    shell.execute('Create group allow-internet', 'arch-chroot /mnt groupadd -rf allow-internet')
     # Add user (USER_NAME) to system groups
-    run_bash('Add {USER_NAME} to wheel', 'arch-chroot /mnt gpasswd -a {USER_NAME} wheel')
-    run_bash('Add {USER_NAME} to audit', 'arch-chroot /mnt gpasswd -a {USER_NAME} audit')
-    run_bash('Add {USER_NAME} to libvirt', 'arch-chroot /mnt gpasswd -a {USER_NAME} libvirt')
-    run_bash('Add {USER_NAME} to firejail', 'arch-chroot /mnt gpasswd -a {USER_NAME} firejail')
+    shell.execute('Add $USER_NAME to wheel', 'arch-chroot /mnt gpasswd -a $USER_NAME wheel')
+    shell.execute('Add $USER_NAME to audit', 'arch-chroot /mnt gpasswd -a $USER_NAME audit')
+    shell.execute('Add $USER_NAME to libvirt', 'arch-chroot /mnt gpasswd -a $USER_NAME libvirt')
+    shell.execute('Add $USER_NAME to firejail', 'arch-chroot /mnt gpasswd -a $USER_NAME firejail')
     # Set user (USER_NAME) password
-    run_bash('Set password for {USER_NAME}', 'arch-chroot /mnt chpasswd', input='{USER_NAME}:{USER_PASSWORD}\n')
+    shell.execute('Set password for $USER_NAME', 'arch-chroot /mnt chpasswd', input='$USER_NAME:$USER_PASSWORD\n')
 
 #-- Install AUR helper --------------------------------------------------------
 
-    run_bash('Set NOPASSWD sudo to users', 'echo "{USER_NAME} ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
-    run_bash('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
+    shell.execute('Set NOPASSWD sudo to users', 'echo "$USER_NAME ALL=(ALL) NOPASSWD:ALL" >>/mnt/etc/sudoers')
+    shell.execute('Disable pacman wrapper', 'mv /mnt/usr/local/bin/pacman /mnt/usr/local/bin/pacman.disable')
 
     # command = textwrap.dedent(f"""\
-    # arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
+    # arch-chroot -u $USER_NAME /mnt /bin/sh -c 'mkdir /tmp/yay.$$ &&
     # cd /tmp/yay.$$ &&
     # curl https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin -o PKGBUILD &&
     # -c makepkg -si --noconfirm'
     # """).strip()
 
-    command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
+    command =  f"""arch-chroot -u $USER_NAME /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
 
-    run_bash('Install AUR helper', command)
+    shell.execute('Install AUR helper', command)
 
 #-- Install Aur Packages  -----------------------------------------------------
 
@@ -1362,14 +1524,14 @@ if __name__ == '__main__':
         if SYSTEM_GPU == 'NVIDIA'  : packages.append('nouveau-fw')
 
     SYSTEM_PKGS = ' '.join(packages)
-    run_bash('Installing Aur packages ....(patience)', 'HOME="/home/{USER_NAME}" arch-chroot -u "{USER_NAME}" /mnt /usr/bin/yay --noconfirm -Sy {SYSTEM_PKGS}')
+    shell.execute('Installing Aur packages ....(patience)', 'HOME="/home/$USER_NAME" arch-chroot -u "$USER_NAME" /mnt /usr/bin/yay --noconfirm -Sy $SYSTEM_PKGS')
 
-    run_bash('Remove pacman wrapper', 'mv /mnt/usr/local/bin/pacman.disable /mnt/usr/local/bin/pacman')
-    run_bash('Remove NOPASSWD sudo from users', "sed -i '$ d' /mnt/etc/sudoers")
+    shell.execute('Remove pacman wrapper', 'mv /mnt/usr/local/bin/pacman.disable /mnt/usr/local/bin/pacman')
+    shell.execute('Remove NOPASSWD sudo from users', "sed -i '$ d' /mnt/etc/sudoers")
 
 #-- Install Login -------------------------------------------------------------
 
-    run_bash('Installing Login screen', 'arch-chroot /mnt plymouth-set-default-theme splash')
+    shell.execute('Installing Login screen', 'arch-chroot /mnt plymouth-set-default-theme splash')
 
 #-- Installing RAM Disk Image -------------------------------------------------
 
@@ -1383,7 +1545,7 @@ if __name__ == '__main__':
         SYSTEM_MODULES = ''
 
     SYSTEM_CMD = [
-        f'MODULES=({SYSTEM_MODULES})',
+        f'MODULES=($SYSTEM_MODULES)',
         'BINARIES=(setfont)',
         'FILES=()',
         'HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)'
@@ -1391,76 +1553,76 @@ if __name__ == '__main__':
 
     # Overwrite the config file with the SYSTEM_CMD data
     with open('/mnt/etc/mkinitcpio.conf', 'w') as f: f.write('\n'.join(SYSTEM_CMD) + '\n')
-    run_bash('Creating the initial RAM disk image', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
+    shell.execute('Creating the initial RAM disk image', 'arch-chroot /mnt mkinitcpio -p linux-hardened')
 
 
 # -- Generate UEFI keys, sign kernels, enroll keys ----------------------------
 
-    run_bash('Configure Linux Hardened', "echo 'KERNEL=linux-hardened' >/mnt/etc/arch-secure-boot/config")
-    run_bash('Install Linux Hardened', 'arch-chroot /mnt arch-secure-boot initial-setup')
+    shell.execute('Configure Linux Hardened', "echo 'KERNEL=linux-hardened' >/mnt/etc/arch-secure-boot/config")
+    shell.execute('Install Linux Hardened', 'arch-chroot /mnt arch-secure-boot initial-setup')
 
 # -- Hardening ----------------------------------------------------------------
 
-    run_bash('Hardening /boot partition', 'arch-chroot /mnt chmod 700 /boot')
-    run_bash('Disabling root user', 'arch-chroot /mnt passwd -dl root')
+    shell.execute('Hardening /boot partition', 'arch-chroot /mnt chmod 700 /boot')
+    shell.execute('Disabling root user', 'arch-chroot /mnt passwd -dl root')
 
 # -- Configuring Firejail -----------------------------------------------------
 
-    run_bash('Configure firejail', 'arch-chroot /mnt /usr/bin/firecfg')
-    run_bash('Enable firejail for {USER_NAME}', 'echo "{USER_NAME}" >/mnt/etc/firejail/firejail.users')
+    shell.execute('Configure firejail', 'arch-chroot /mnt /usr/bin/firecfg')
+    shell.execute('Enable firejail for $USER_NAME', 'echo "$USER_NAME" >/mnt/etc/firejail/firejail.users')
 
 # -- Configuring DNS ----------------------------------------------------------
 
-    run_bash('Remove default resolv.conf', 'rm -f /mnt/etc/resolv.conf')
-    run_bash('Install resolv.conf', 'arch-chroot /mnt ln -s /usr/lib/systemd/resolv.conf /etc/resolv.conf')
+    shell.execute('Remove default resolv.conf', 'rm -f /mnt/etc/resolv.conf')
+    shell.execute('Install resolv.conf', 'arch-chroot /mnt ln -s /usr/lib/systemd/resolv.conf /etc/resolv.conf')
 
 # -- Configuring Systemd services ---------------------------------------------
 
-    run_bash('Configure systemd service - systemd-networkd', 'arch-chroot /mnt systemctl enable systemd-networkd')
-    run_bash('Configure systemd service - systemd-resolved', 'arch-chroot /mnt systemctl enable systemd-resolved')
-    run_bash('Configure systemd service - systemd-timesyncd', 'arch-chroot /mnt systemctl enable systemd-timesyncd')
-    run_bash('Configure systemd service - getty@tty1', 'arch-chroot /mnt systemctl enable getty@tty1')
-    run_bash('Configure systemd service - dbus-broker', 'arch-chroot /mnt systemctl enable dbus-broker')
-    run_bash('Configure systemd service - iwd', 'arch-chroot /mnt systemctl enable iwd')
-    run_bash('Configure systemd service - auditd', 'arch-chroot /mnt systemctl enable auditd')
-    run_bash('Configure systemd service - nftables', 'arch-chroot /mnt systemctl enable nftables')
-    run_bash('Configure systemd service - docker', 'arch-chroot /mnt systemctl enable docker')
-    run_bash('Configure systemd service - libvirtd', 'arch-chroot /mnt systemctl enable libvirtd')
-    run_bash('Configure systemd service - check-secure-boot', 'arch-chroot /mnt systemctl enable check-secure-boot')
-    run_bash('Configure systemd service - apparmor', 'arch-chroot /mnt systemctl enable apparmor')
-    run_bash('Configure systemd service - auditd-notify', 'arch-chroot /mnt systemctl enable auditd-notify')
-    run_bash('Configure systemd service - local-forwarding-proxy', 'arch-chroot /mnt systemctl enable local-forwarding-proxy')
+    shell.execute('Configure systemd service - systemd-networkd', 'arch-chroot /mnt systemctl enable systemd-networkd')
+    shell.execute('Configure systemd service - systemd-resolved', 'arch-chroot /mnt systemctl enable systemd-resolved')
+    shell.execute('Configure systemd service - systemd-timesyncd', 'arch-chroot /mnt systemctl enable systemd-timesyncd')
+    shell.execute('Configure systemd service - getty@tty1', 'arch-chroot /mnt systemctl enable getty@tty1')
+    shell.execute('Configure systemd service - dbus-broker', 'arch-chroot /mnt systemctl enable dbus-broker')
+    shell.execute('Configure systemd service - iwd', 'arch-chroot /mnt systemctl enable iwd')
+    shell.execute('Configure systemd service - auditd', 'arch-chroot /mnt systemctl enable auditd')
+    shell.execute('Configure systemd service - nftables', 'arch-chroot /mnt systemctl enable nftables')
+    shell.execute('Configure systemd service - docker', 'arch-chroot /mnt systemctl enable docker')
+    shell.execute('Configure systemd service - libvirtd', 'arch-chroot /mnt systemctl enable libvirtd')
+    shell.execute('Configure systemd service - check-secure-boot', 'arch-chroot /mnt systemctl enable check-secure-boot')
+    shell.execute('Configure systemd service - apparmor', 'arch-chroot /mnt systemctl enable apparmor')
+    shell.execute('Configure systemd service - auditd-notify', 'arch-chroot /mnt systemctl enable auditd-notify')
+    shell.execute('Configure systemd service - local-forwarding-proxy', 'arch-chroot /mnt systemctl enable local-forwarding-proxy')
 
 # -- Configuring Systemd timers -----------------------------------------------
 
-    run_bash('Configure systemd timer - snapper-timeline.timer', 'arch-chroot /mnt systemctl enable snapper-timeline.timer')
-    run_bash('Configure systemd timer - snapper-cleanup.timer', 'arch-chroot /mnt systemctl enable snapper-cleanup.timer')
-    run_bash('Configure systemd timer - auditor.timer', 'arch-chroot /mnt systemctl enable auditor.timer')
-    run_bash('Configure systemd timer - btrfs-scrub@-.timer', 'arch-chroot /mnt systemctl enable btrfs-scrub@-.timer')
-    run_bash('Configure systemd timer - btrfs-balance.timer', 'arch-chroot /mnt systemctl enable btrfs-balance.timer')
-    run_bash('Configure systemd timer - pacman-sync.timer', 'arch-chroot /mnt systemctl enable pacman-sync.timer')
-    run_bash('Configure systemd timer - pacman-notify.timer', 'arch-chroot /mnt systemctl enable pacman-notify.timer')
-    run_bash('Configure systemd timer - should-reboot-check.timer', 'arch-chroot /mnt systemctl enable should-reboot-check.timer')
+    shell.execute('Configure systemd timer - snapper-timeline.timer', 'arch-chroot /mnt systemctl enable snapper-timeline.timer')
+    shell.execute('Configure systemd timer - snapper-cleanup.timer', 'arch-chroot /mnt systemctl enable snapper-cleanup.timer')
+    shell.execute('Configure systemd timer - auditor.timer', 'arch-chroot /mnt systemctl enable auditor.timer')
+    shell.execute('Configure systemd timer - btrfs-scrub@-.timer', 'arch-chroot /mnt systemctl enable btrfs-scrub@-.timer')
+    shell.execute('Configure systemd timer - btrfs-balance.timer', 'arch-chroot /mnt systemctl enable btrfs-balance.timer')
+    shell.execute('Configure systemd timer - pacman-sync.timer', 'arch-chroot /mnt systemctl enable pacman-sync.timer')
+    shell.execute('Configure systemd timer - pacman-notify.timer', 'arch-chroot /mnt systemctl enable pacman-notify.timer')
+    shell.execute('Configure systemd timer - should-reboot-check.timer', 'arch-chroot /mnt systemctl enable should-reboot-check.timer')
 
 # -- Configuring Systemd user services ----------------------------------------
 
-    run_bash('Configure systemd user service - dbus-broker', 'arch-chroot /mnt systemctl --global enable dbus-broker')
-    run_bash('Configure systemd user service - journalctl-notify', 'arch-chroot /mnt systemctl --global enable journalctl-notify')
-    run_bash('Configure systemd user service - pipewire', 'arch-chroot /mnt systemctl --global enable pipewire')
-    run_bash('Configure systemd user service - wireplumber', 'arch-chroot /mnt systemctl --global enable wireplumber')
-    run_bash('Configure systemd user service - gammastep', 'arch-chroot /mnt systemctl --global enable gammastep')
+    shell.execute('Configure systemd user service - dbus-broker', 'arch-chroot /mnt systemctl --global enable dbus-broker')
+    shell.execute('Configure systemd user service - journalctl-notify', 'arch-chroot /mnt systemctl --global enable journalctl-notify')
+    shell.execute('Configure systemd user service - pipewire', 'arch-chroot /mnt systemctl --global enable pipewire')
+    shell.execute('Configure systemd user service - wireplumber', 'arch-chroot /mnt systemctl --global enable wireplumber')
+    shell.execute('Configure systemd user service - gammastep', 'arch-chroot /mnt systemctl --global enable gammastep')
 
 # -- Installing dotfiles  -----------------------------------------------------
 
 
-    command = f"""HOME='/home/{USER_NAME}' arch-chroot -u {USER_NAME} /mnt /bin/bash -c 'cd && git clone https://github.com/echjansen/.dotfiles && .dotfiles/install.sh'"""
+    command = f"""HOME='/home/$USER_NAME' arch-chroot -u $USER_NAME /mnt /bin/bash -c 'cd && git clone https://github.com/echjansen/.dotfiles && .dotfiles/install.sh'"""
 
-    run_bash('Install dotfiles ....(patience)', command)
+    shell.execute('Install dotfiles ....(patience)', command)
 
 # -- Done ---------------------------------------------------------------------
 
     if prompt.ask("[green]Installation complete successfully. Reboot?[/]", choices=['y', 'n']) == 'y':
-        run_bash('Swapfile off','swapoff -a')
-        run_bash('Partitions - Umount', 'umount --recursive /mnt')
-        run_bash('Partition 1 - Close Luks', 'cryptsetup luksClose {PART_1_UUID}')
-        run_bash('Rebooting', 'reboot now')
+        shell.execute('Swapfile off','swapoff -a')
+        shell.execute('Partitions - Umount', 'umount --recursive /mnt')
+        shell.execute('Partition 1 - Close Luks', 'cryptsetup luksClose $PART_1_UUID')
+        shell.execute('Rebooting', 'reboot now')
