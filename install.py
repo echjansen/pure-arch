@@ -37,6 +37,7 @@
 #       INFO     Copying file from rootfs to /mnt
 #       INFO:rich:[yellow]Copying file from rootfs to /mnt[/yellow]
 # - [X]  arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
+# - [ ] Read a config file instead of quering user entry
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -779,7 +780,7 @@ class ShellCommandExecutor:
                     title="Output"
                 )
                 # Only print output when present
-                if stdout_str or stderr_str:
+                if stdout_str != "" or stderr_str != "":
                     self.console.print(output_panel)
 
             if check_returncode and returncode != 0:
@@ -803,7 +804,7 @@ class ShellCommandExecutor:
             logging.info(f"Command executed successfully: {command}")
             return True  # Indicate success
 
-        except Exception as e:
+        except Exception:
             self.console.print(f"[{self.theme['failure']}][✗] {description}[/{self.theme['failure']}]")
             logging.exception(f"Exception while executing command: {command}")
             if self.debug:
@@ -1452,8 +1453,8 @@ if __name__ == '__main__':
     SYSTEM_CMD = [
         'lsm=landlock,lockdown,yama,integrity,apparmor,bpf', # Customize Linux Security Modules to include AppArmor
         'lockdown=integrity',                                # Put kernel in integrity lockdown mode
-        f'cryptdevice=$DRIVE1:$PART_1_UUID',               # The LUKS device to decrypt
-        f'root=/dev/mapper/$PART_1_UUID',                   # The decrypted device to mount as the root
+        f'cryptdevice={DRIVE}1:{PART_1_UUID}',               # The LUKS device to decrypt
+        f'root=/dev/mapper/{PART_1_UUID}',                   # The decrypted device to mount as the root
         'rootflags=subvol=@',                                # Mount the @ btrfs subvolume inside the decrypted device as the root
         'mem_sleep_default=deep',                            # Allow suspend state (puts device into sleep but keeps powering the RAM for fast sleep mode recovery)
         'audit=1',                                           # Ensure that all processes that run before the audit daemon starts are marked as auditable by the kernel
@@ -1511,7 +1512,7 @@ if __name__ == '__main__':
     # -c makepkg -si --noconfirm'
     # """).strip()
 
-    command =  f"""arch-chroot -u $USER_NAME /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
+    command =  f"""arch-chroot -u {USER_NAME} /mnt /bin/sh -c 'mkdir /tmp/yay.$$ && cd /tmp/yay.$$ && curl "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=yay-bin" -o PKGBUILD && makepkg -si --noconfirm'"""
 
     shell.execute('Install AUR helper', command)
 
@@ -1545,7 +1546,7 @@ if __name__ == '__main__':
         SYSTEM_MODULES = ''
 
     SYSTEM_CMD = [
-        f'MODULES=($SYSTEM_MODULES)',
+        f'MODULES=({SYSTEM_MODULES})',
         'BINARIES=(setfont)',
         'FILES=()',
         'HOOKS=(base consolefont keymap udev autodetect modconf block plymouth encrypt filesystems keyboard)'
@@ -1615,7 +1616,7 @@ if __name__ == '__main__':
 # -- Installing dotfiles  -----------------------------------------------------
 
 
-    command = f"""HOME='/home/$USER_NAME' arch-chroot -u $USER_NAME /mnt /bin/bash -c 'cd && git clone https://github.com/echjansen/.dotfiles && .dotfiles/install.sh'"""
+    command = f"""HOME='/home/{USER_NAME}' arch-chroot -u $USER_NAME /mnt /bin/bash -c 'cd && git clone https://github.com/echjansen/.dotfiles && .dotfiles/install.sh'"""
 
     shell.execute('Install dotfiles ....(patience)', command)
 
