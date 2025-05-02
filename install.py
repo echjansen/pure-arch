@@ -32,12 +32,14 @@
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
 # - [X] Use 'dialog' for the user input
+# - [X] arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
 # - [ ] Use Luks 2 for encryption
 # - [ ] copy_file_structure uses old logging style
 #       INFO     Copying file from rootfs to /mnt
 #       INFO:rich:[yellow]Copying file from rootfs to /mnt[/yellow]
-# - [X]  arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
 # - [ ] Read a config file instead of quering user entry
+# - [ ] Create variable substitution in the same fashion
+# - [ ] Remove old CommandExecutor
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -126,7 +128,7 @@ class CustomFormatter(logging.Formatter):
         return super().format(record)
 
 #----------------------------------------------------------------------------------------------------------------------
-# System Check Functions
+# System Check and Support Functions
 #----------------------------------------------------------------------------------------------------------------------
 def check_sudo():
     """
@@ -190,8 +192,269 @@ def check_secure_boot():
         console.print(f'An unexpected error occurred: {e}', style='critical')
         exit()
 
+def get_cpu_brand() -> str:
+    """
+    Uses the 'lscpu' command to determine the CPU brand (Intel, AMD, etc.).
+
+    Returns:
+        str: The CPU brand name.
+             Returns "Unknown" if the brand cannot be determined or an error occurs.
+    """
+    try:
+        # Execute lscpu
+        result = subprocess.run(
+            ['lscpu'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        # Search for the "CPU vendor" line
+        vendor_id = None
+        model_name = None
+        for line in output.splitlines():
+            if "Vendor ID:" in line:
+                vendor_id = line.split(":", 1)[1].strip()
+            if "Model name:" in line:
+                model_name = line.split(":", 1)[1].strip()
+
+        if vendor_id:
+            if vendor_id == "GenuineIntel":
+                return "Intel"
+            elif vendor_id == "AuthenticAMD":
+                return "AMD"
+            else:
+                if model_name:
+                   return model_name # Returning the "Model name"
+                else:
+                   return vendor_id  # Return the raw "CPU vendor" string if known brands aren't matched.
+        else:
+            console.print("Could not determine CPU brand from lscpu output.", style='error')
+            return "Unknown"
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing lscpu: {e}", style='critical')
+        return "Unknown"
+    except FileNotFoundError:
+        console.print("Error: lscpu command not found. Please ensure lscpu is installed.", style='critical')
+        return "Unknown"
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return "Unknown"
+
+def get_graphics_card_brand() -> str:
+    """
+    Uses the 'lspci' command to determine the graphics card brand (Intel, NVIDIA, AMD, etc.).
+
+    Returns:
+        str: The graphics card brand name.
+             Returns "Unknown" if the brand cannot be determined or an error occurs.
+    """
+
+    try:
+        # Execute lspci to get VGA compatible controller information
+        result = subprocess.run(
+            ['lspci', '-vnn', '-d', '::0300'],  # Filter for VGA compatible controllers
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        # Parse the output to find the graphics card brand
+        for line in output.splitlines():
+            if "VGA compatible controller" in line:
+                # Extract the brand name from the line
+                brand = line.split("VGA compatible controller")[1].strip()
+
+                # Normalize the brand (remove extra info, use common names)
+                if "Intel" in brand:
+                    return "Intel"
+                elif "NVIDIA" in brand:
+                    return "NVIDIA"
+                elif "AMD" in brand or "ATI" in brand:
+                    return "AMD"  # Using AMD as the standard name
+                elif "VMware" in brand :
+                    return "VMWare"  # VMWare Virtualisation
+                elif "Oracle" in brand :
+                    return "VirtualBox"  # VirtualBox Virtualisation
+                else:
+                    return brand  # Return the raw brand if known brands aren't matched.
+
+        console.print("Could not determine graphics card brand from lspci output.", style='error')
+        return "Unknown"
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing lspci: {e}", style='critical')
+        return "Unknown"
+    except FileNotFoundError:
+        console.print("Error: lspci command not found. Please ensure lspci is installed.", style='critical')
+        return "Unknown"
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return "Unknown"
+
+def get_virtualizer() -> str:
+    """
+    Uses the 'systemd-detect-virt' command to determine the current virtualizer.
+
+    Returns:
+        str: The name of the virtualizer (e.g., "vmware", "kvm", "docker", "lxc").
+             Returns "none" if running on bare metal or the virtualizer cannot be determined.
+             Returns "Unknown" if an error occurs.
+    """
+
+    try:
+        # Execute systemd-detect-virt
+        result = subprocess.run(
+            ['systemd-detect-virt'],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        if output:
+            return output
+        else:
+            return "metal"  # Running on bare metal
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing systemd-detect-virt: {e}", style='critical')
+        return "Unknown"
+    except FileNotFoundError:
+        console.print("Error: systemd-detect-virt command not found. Please ensure systemd is installed.", style='critical')
+        return "Unknown"
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return "Unknown"
+
+
+def get_packages_from_file(filepath: str) -> List[str]:
+    """
+    Reads a file containing a list of package names (one per line),
+    removes comments, and returns a list of clean package names.
+
+    Comments start with '#' and can be the entire line or behind the package name.
+
+    To use with for instance pacstrap use ' '.join(packages)
+
+    Args:
+        filepath: The path to the file containing the package list.
+
+    Returns:
+        A list of package names (without comments).
+    """
+    packages: List[str] = []
+
+    try:
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()  # Remove leading/trailing whitespace
+
+                # Skip empty lines and comment-only lines
+                if not line or line.startswith('#'):
+                    continue
+
+                # Remove comments at the end of the line
+                if '#' in line:
+                    line = line.split('#', 1)[0].strip() # Splitting from the left side only once
+
+                # Add the package name to the list
+                if line:  # Ensure there's something left after removing comments
+                    packages.append(line)
+
+    except FileNotFoundError:
+        console.print(f"Error: File not found: {filepath}", style='critical')
+    except Exception as e:
+        console.print(f"An error occurred: {e}", style='critical')
+
+    return packages
+
+def find_subdirectory(source_name: str) -> Union[str, None]:
+    """
+    Finds the source directory by name within the current directory structure
+    using the 'find' command.
+
+    Args:
+        source_name: The name of the source directory to find.
+
+    Returns:
+        The absolute path to the source directory if found, otherwise None.
+    """
+
+    try:
+        # Execute the 'find' command
+        result = subprocess.run(
+            ['find', '.', '-name', source_name, '-type', 'd', '-print0'],  # Find directories only, print null-terminated
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        output = result.stdout.strip()
+
+        if output:
+            # Split the output by null characters (handles filenames with spaces or newlines)
+            paths = output.split('\0')
+            # Return the first matching directory (assuming there's only one)
+            return os.path.abspath(paths[0])
+
+        else:
+            console.print(f"Error: Source directory '{source_name}' not found using 'find' command.", style='error')
+            return None
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"Error executing find command: {e}", style='critical')
+        return None
+    except FileNotFoundError:
+        console.print("Error: find command not found. Please ensure find is installed.", style='critical')
+        return None
+    except Exception as e:
+        console.print(f"An unexpected error occurred: {e}", style='critical')
+        return None
+
+def copy_file_structure(source: str, destination: str) -> None:
+    """
+    Copies the file structure (folders and files) from a source directory to a
+    destination directory, creating any missing folders in the destination.
+
+    Args:
+        source: The path to the source directory.
+        destination: The path to the destination directory.
+    """
+    log.info(f'Copying file from {source} to {destination}')
+
+    try:
+        # Check if the source directory exists
+        if not os.path.isdir(source):
+            source = find_subdirectory(source)
+            if not source:
+                log.error(f"Error: Source directory '{source}' not found.", style='error')
+                return
+
+        # Create the destination directory if it doesn't exist
+        os.makedirs(destination, exist_ok=True)  # exist_ok=True prevents an error if the directory already exists
+
+        for root, _, files in os.walk(source):
+            # Create the corresponding directory structure in the destination
+            dest_dir = os.path.join(destination, os.path.relpath(root, source))
+            os.makedirs(dest_dir, exist_ok=True)
+
+            for file in files:
+                source_file = os.path.join(root, file)
+                dest_file = os.path.join(dest_dir, file)
+                try:
+                    shutil.copy2(source_file, dest_file)  # copy2 preserves metadata
+                except Exception as e:
+                    log.error(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}")
+
+    except Exception as e:
+        log.exception('An unexpected error occurred')
+        return -1, "", str(e)
+
 #----------------------------------------------------------------------------------------------------------------------
-# User Entry class
+# User Entry class - using 'dialog' package (installed in this script)
 #----------------------------------------------------------------------------------------------------------------------
 class UserEntry:
     """A class for gathering user information via dialog prompts."""
@@ -674,7 +937,7 @@ class UserEntry:
 
 
 #----------------------------------------------------------------------------------------------------------------------
-# Shell Commands with feedback formatting
+# Shell Commands with user feedback and optional debug  formatting
 #----------------------------------------------------------------------------------------------------------------------
 class ShellCommandExecutor:
     """
@@ -832,386 +1095,6 @@ class ShellCommandExecutor:
 #----------------------------------------------------------------------------------------------------------------------
 # System Functions
 #----------------------------------------------------------------------------------------------------------------------
-def get_cpu_brand() -> str:
-    """
-    Uses the 'lscpu' command to determine the CPU brand (Intel, AMD, etc.).
-
-    Returns:
-        str: The CPU brand name.
-             Returns "Unknown" if the brand cannot be determined or an error occurs.
-    """
-    try:
-        # Execute lscpu
-        result = subprocess.run(
-            ['lscpu'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-
-        # Search for the "CPU vendor" line
-        vendor_id = None
-        model_name = None
-        for line in output.splitlines():
-            if "Vendor ID:" in line:
-                vendor_id = line.split(":", 1)[1].strip()
-            if "Model name:" in line:
-                model_name = line.split(":", 1)[1].strip()
-
-        if vendor_id:
-            if vendor_id == "GenuineIntel":
-                return "Intel"
-            elif vendor_id == "AuthenticAMD":
-                return "AMD"
-            else:
-                if model_name:
-                   return model_name # Returning the "Model name"
-                else:
-                   return vendor_id  # Return the raw "CPU vendor" string if known brands aren't matched.
-        else:
-            console.print("Could not determine CPU brand from lscpu output.", style='error')
-            return "Unknown"
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing lscpu: {e}", style='critical')
-        return "Unknown"
-    except FileNotFoundError:
-        console.print("Error: lscpu command not found. Please ensure lscpu is installed.", style='critical')
-        return "Unknown"
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return "Unknown"
-
-def get_graphics_card_brand() -> str:
-    """
-    Uses the 'lspci' command to determine the graphics card brand (Intel, NVIDIA, AMD, etc.).
-
-    Returns:
-        str: The graphics card brand name.
-             Returns "Unknown" if the brand cannot be determined or an error occurs.
-    """
-
-    try:
-        # Execute lspci to get VGA compatible controller information
-        result = subprocess.run(
-            ['lspci', '-vnn', '-d', '::0300'],  # Filter for VGA compatible controllers
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-
-        # Parse the output to find the graphics card brand
-        for line in output.splitlines():
-            if "VGA compatible controller" in line:
-                # Extract the brand name from the line
-                brand = line.split("VGA compatible controller")[1].strip()
-
-                # Normalize the brand (remove extra info, use common names)
-                if "Intel" in brand:
-                    return "Intel"
-                elif "NVIDIA" in brand:
-                    return "NVIDIA"
-                elif "AMD" in brand or "ATI" in brand:
-                    return "AMD"  # Using AMD as the standard name
-                elif "VMware" in brand :
-                    return "VMWare"  # VMWare Virtualisation
-                elif "Oracle" in brand :
-                    return "VirtualBox"  # VirtualBox Virtualisation
-                else:
-                    return brand  # Return the raw brand if known brands aren't matched.
-
-        console.print("Could not determine graphics card brand from lspci output.", style='error')
-        return "Unknown"
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing lspci: {e}", style='critical')
-        return "Unknown"
-    except FileNotFoundError:
-        console.print("Error: lspci command not found. Please ensure lspci is installed.", style='critical')
-        return "Unknown"
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return "Unknown"
-
-def get_virtualizer() -> str:
-    """
-    Uses the 'systemd-detect-virt' command to determine the current virtualizer.
-
-    Returns:
-        str: The name of the virtualizer (e.g., "vmware", "kvm", "docker", "lxc").
-             Returns "none" if running on bare metal or the virtualizer cannot be determined.
-             Returns "Unknown" if an error occurs.
-    """
-
-    try:
-        # Execute systemd-detect-virt
-        result = subprocess.run(
-            ['systemd-detect-virt'],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-
-        if output:
-            return output
-        else:
-            return "metal"  # Running on bare metal
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing systemd-detect-virt: {e}", style='critical')
-        return "Unknown"
-    except FileNotFoundError:
-        console.print("Error: systemd-detect-virt command not found. Please ensure systemd is installed.", style='critical')
-        return "Unknown"
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return "Unknown"
-
-
-def get_packages_from_file(filepath: str) -> List[str]:
-    """
-    Reads a file containing a list of package names (one per line),
-    removes comments, and returns a list of clean package names.
-
-    Comments start with '#' and can be the entire line or behind the package name.
-
-    To use with for instance pacstrap use ' '.join(packages)
-
-    Args:
-        filepath: The path to the file containing the package list.
-
-    Returns:
-        A list of package names (without comments).
-    """
-    packages: List[str] = []
-
-    try:
-        with open(filepath, 'r') as f:
-            for line in f:
-                line = line.strip()  # Remove leading/trailing whitespace
-
-                # Skip empty lines and comment-only lines
-                if not line or line.startswith('#'):
-                    continue
-
-                # Remove comments at the end of the line
-                if '#' in line:
-                    line = line.split('#', 1)[0].strip() # Splitting from the left side only once
-
-                # Add the package name to the list
-                if line:  # Ensure there's something left after removing comments
-                    packages.append(line)
-
-    except FileNotFoundError:
-        console.print(f"Error: File not found: {filepath}", style='critical')
-    except Exception as e:
-        console.print(f"An error occurred: {e}", style='critical')
-
-    return packages
-
-def find_subdirectory(source_name: str) -> Union[str, None]:
-    """
-    Finds the source directory by name within the current directory structure
-    using the 'find' command.
-
-    Args:
-        source_name: The name of the source directory to find.
-
-    Returns:
-        The absolute path to the source directory if found, otherwise None.
-    """
-
-    try:
-        # Execute the 'find' command
-        result = subprocess.run(
-            ['find', '.', '-name', source_name, '-type', 'd', '-print0'],  # Find directories only, print null-terminated
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        output = result.stdout.strip()
-
-        if output:
-            # Split the output by null characters (handles filenames with spaces or newlines)
-            paths = output.split('\0')
-            # Return the first matching directory (assuming there's only one)
-            return os.path.abspath(paths[0])
-
-        else:
-            console.print(f"Error: Source directory '{source_name}' not found using 'find' command.", style='error')
-            return None
-
-    except subprocess.CalledProcessError as e:
-        console.print(f"Error executing find command: {e}", style='critical')
-        return None
-    except FileNotFoundError:
-        console.print("Error: find command not found. Please ensure find is installed.", style='critical')
-        return None
-    except Exception as e:
-        console.print(f"An unexpected error occurred: {e}", style='critical')
-        return None
-
-def copy_file_structure(source: str, destination: str) -> None:
-    """
-    Copies the file structure (folders and files) from a source directory to a
-    destination directory, creating any missing folders in the destination.
-
-    Args:
-        source: The path to the source directory.
-        destination: The path to the destination directory.
-    """
-    log.info(f'Copying file from {source} to {destination}')
-
-    try:
-        # Check if the source directory exists
-        if not os.path.isdir(source):
-            source = find_subdirectory(source)
-            if not source:
-                log.error(f"Error: Source directory '{source}' not found.", style='error')
-                return
-
-        # Create the destination directory if it doesn't exist
-        os.makedirs(destination, exist_ok=True)  # exist_ok=True prevents an error if the directory already exists
-
-        for root, _, files in os.walk(source):
-            # Create the corresponding directory structure in the destination
-            dest_dir = os.path.join(destination, os.path.relpath(root, source))
-            os.makedirs(dest_dir, exist_ok=True)
-
-            for file in files:
-                source_file = os.path.join(root, file)
-                dest_file = os.path.join(dest_dir, file)
-                try:
-                    shutil.copy2(source_file, dest_file)  # copy2 preserves metadata
-                except Exception as e:
-                    log.error(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}")
-
-    except Exception as e:
-        log.exception('An unexpected error occurred')
-        return -1, "", str(e)
-
-#----------------------------------------------------------------------------------------------------------------------
-# Command function
-#----------------------------------------------------------------------------------------------------------------------
-def run_bash(description :str, command :str, input=None, output_var=None, check_returncode: bool=True, use_strict_mode: bool = True, **kwargs):
-    '''
-    Execute a bash command with optional input from stdin and return the return code, output and error.
-
-    This function automatically prepends "set -euo pipefail" to the command string to enable strict error checking,
-
-    Args:
-        description (str): A description of the command being executed.
-        command (str): The bash command to execute.
-        input (str, optional): Input to pass to the command's stdin. Defaults to None.
-        output_var (str, optional): The name of a global variable to store the command's stdout in. Defaults to None.
-        check_returncode (bool, optional): Whether to check the command's return code and raise an exception if it's non-zero. Defaults to True.
-        use_strict_mode (bool, optional): Whether to prepend 'set -euo pipefail' to the command string.  Defaults to True.
-
-    Returns:
-        Tuple[int, str, str]: A tuple containing the return code, stdout, and stderr of the command.
-    '''
-
-    # Step when debugging
-    if STEP == True:
-        if prompt.ask(f"{description}", choices=['y', 'n']) == 'n': exit()
-
-    # Ensure arguments are well formatted
-    if not isinstance(description, str):
-        log.error("The Description must be a string")
-        raise ValueError("The Description must be a string")
-
-    if not isinstance(command, str):
-        log.error("The command must be a string")
-        raise ValueError("The command must be a string")
-
-    if input is not None and not isinstance(input, str):
-        log.error("The Input must be s string")
-        raise ValueError("The Input must be a string")
-
-    if output_var is not None and not isinstance(output_var, str):
-        log.error("The Output name must be s string")
-        raise ValueError("The Output name must be a string")
-
-    # Format "command" with potential values of global variables
-    try:
-        global_vars = {key: value for key, value in globals().items() if not key.startswith('__')}
-        command_formatted = command.format(**global_vars)
-        if use_strict_mode:
-            command_formatted = f"set -euo pipefail && {command_formatted}"
-    except KeyError as e:
-        log.error(f'Missing variable for command: {e}')
-        raise ValueError(f'Missing variable for command: {e}')
-
-    # Format "description" with potential values of global variables
-    try:
-        description_formatted = description.format(**global_vars)
-    except KeyError as e:
-        log.error(f'Missing variable for description: {e}')
-        raise ValueError(f'Missing variable for description: {e}')
-
-    # Format input with potential values of global variables
-    try:
-        input_formatted = None
-        if input is not None:
-            input_formatted = input.format(**global_vars)
-    except KeyError as e:
-        log.error(f'Missing variable for input: {e}')
-        raise ValueError(f'Missing variable for input: {e}')
-
-    # Report running of the command
-    log.info(f'{description_formatted}')
-    if DEBUG: log.debug(f'{command_formatted}')
-
-    # Logging to file
-    if SYSTEM_LOG_FILE:
-        try:
-            with open(SYSTEM_LOG_FILE, "a") as log_file:
-                log_file.write(f"Description: {description_formatted}\n")
-                log_file.write(f"Command: {command_formatted}\n")
-        except Exception as e:
-            console.print(f"Error writing to log file: {e}", style='error')
-
-    try:
-        # Run the bash command
-        result = subprocess.run(command_formatted, shell=True, check=check_returncode, stdout=subprocess.PIPE,
-                                input=input_formatted, stderr=subprocess.PIPE, text=True)
-
-        # Log command results
-        if SYSTEM_LOG_FILE:
-            try:
-                with open(SYSTEM_LOG_FILE, "a") as log_file:
-                    log_file.write(f"Return Code: {result.returncode}\n")
-                    log_file.write(f"Stdout: {result.stdout.strip()}\n")
-                    log_file.write(f"Stderr: {result.stderr.strip()}\n")
-            except Exception as e:
-                console.print(f"Error writing to log file: {e}", style='error')
-
-        # Set return variable if specified
-        if output_var in globals():
-            globals()[output_var] = result.stdout.strip()
-            if DEBUG: log.debug(f'Variable: {output_var} - value: {globals()[output_var]}')
-
-        # Standard function returns
-        return result.returncode, result.stdout.strip(), result.stderr.strip()
-
-    except subprocess.CalledProcessError as e:
-        log.error(f'Command: {command_formatted}')
-        log.error(f'Return code: {e.returncode}')
-        log.error(f'Error output: {e.stderr.strip()}')
-        if prompt.ask('Error occurred, continue?', choices=['y', 'n']) == 'n':
-            exit()
-        return e.returncode, e.output.strip(), e.stderr.strip()
-
-    except Exception as e:
-        log.error(f'Command: {command_formatted}')
-        if prompt.ask('Exception occurred, continue?', choices=['y', 'n']) == 'n':
-            exit()
-        log.exception('An unexpected error occurred')
-        return -1, "", str(e)
-
 if __name__ == '__main__':
 
 #-- Create objects ------------------------------------------------------------
