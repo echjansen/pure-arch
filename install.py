@@ -7,7 +7,6 @@
 # - Create a bootable USB with: `# dd if=archlinux*.iso of=/dev/sdX && sync`
 #
 # UEFI setup:
-#
 # - Set boot mode to UEFI, disable Legacy mode entirely (checked)
 # - Delete preloaded OEM keys for Secure Boot, allow custom ones.
 # - Temporarily disable Secure Boot.
@@ -28,18 +27,20 @@
 #   pacman -S git python-rich
 #   git clone https://github.com/echjansen/pure-arch
 #   cd pure-arch
-#   sudo python secure_arch.py
+#   python secure_arch.py
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
 # - [X] Use 'dialog' for the user input
 # - [X] arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
+# - [X] Remove old CommandExecutor
 # - [ ] Use Luks 2 for encryption
 # - [ ] copy_file_structure uses old logging style
 #       INFO     Copying file from rootfs to /mnt
 #       INFO:rich:[yellow]Copying file from rootfs to /mnt[/yellow]
-# - [ ] Read a config file instead of quering user entry
-# - [ ] Create variable substitution in the same fashion
-# - [ ] Remove old CommandExecutor
+# - [ ] Read a config file instead of queering user entry
+# - [ ] Create variable substitution in the same fashion across functions
+# - [ ] Switch monitor on the fly until correct, then move on
+# - [ ] Hide initial system tests that - correctly - could fail
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -835,21 +836,27 @@ class UserEntry:
     def configure_font(self):
         """Presents a menu to select a console font and applies it immediately."""
         font_options = [
-            ("ter-116n", "ter-124n (Small)"),
-            ("ter-124n", "ter-124n (Medium)"),
-            ("ter-128n", "ter-128n (Large)"),
-            ("ter-132n", "ter-132n (Extra Large)")  # Common Terminus fonts
+            ("ter-116n", "Small"),
+            ("ter-124n", "Medium"),
+            ("ter-128n", "Large"),
+            ("ter-132n", "Extra Large")  # Common Terminus fonts
         ]
 
-        menu_items = []
-        for font, label in font_options:
-            menu_items.extend([font, label])
+        while True:  # Loop until the user is satisfied and presses OK
+            menu_items = []
+            for font, label in font_options:
+                menu_items.extend([font, label])
 
-        selected_font = self._run_dialog("--menu", "Select a console font:", "20", "60", "10", *menu_items)
+            # The following code is modified to use --radiolist rather than --menu, and add a --ok-label argument
+            selected_font = self._run_dialog("--radiolist", "Select a console font:", "20", "60", "10", "OK", "Cancel", "on", *menu_items)
 
-        if selected_font:
-            self._set_console_font(selected_font)  # Apply the selected font immediately
-            self.user_data["font"] = selected_font
+            if selected_font:
+                self._set_console_font(selected_font)  # Apply the selected font immediately
+                self.user_data["font"] = selected_font
+                break  # Exit the loop if a font is selected
+            else:
+                # The user canceled the font selection.
+                return None
 
         return selected_font
 
@@ -933,8 +940,6 @@ class UserEntry:
             return None
 
         return self.user_data
-
-
 
 #----------------------------------------------------------------------------------------------------------------------
 # Shell Commands with user feedback and optional debug  formatting
@@ -1243,8 +1248,6 @@ if __name__ == '__main__':
     # Format partitions
     # -- partition 2 - Root  ---------------------------------------------------
     shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $DRIVE2')
-    # TODO - remove and remve PART_2_UUID variable
-    # shell.execute('Partition 2 - Get UUID for {PART_2_NAME}', 'lsblk -o uuid {DRIVE}2 | tail -1', output_var='PART_2_UUID')
 
 ##- partition 1 ---------------------------------------------------------------
     # Unmount devices from potential previous attempts that failed
