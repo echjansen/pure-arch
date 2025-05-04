@@ -33,13 +33,13 @@
 # - [X] Use 'dialog' for the user input
 # - [X] arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
 # - [X] Remove old CommandExecutor
+# - [X] Switch monitor on the fly until correct, then move on
 # - [ ] Use Luks 2 for encryption
 # - [ ] copy_file_structure uses old logging style
 #       INFO     Copying file from rootfs to /mnt
 #       INFO:rich:[yellow]Copying file from rootfs to /mnt[/yellow]
 # - [ ] Read a config file instead of queering user entry
 # - [ ] Create variable substitution in the same fashion across functions
-# - [ ] Switch monitor on the fly until correct, then move on
 # - [ ] Hide initial system tests that - correctly - could fail
 #----------------------------------------------------------------------------------------------------------------------
 import os
@@ -722,7 +722,7 @@ class UserEntry:
             return None
 
         while True:
-            filter_string = self._run_inputbox("Locale Selection", "Enter a filter string (e.g., 'en_US') or leave blank for all:", default, height=8, width=60)
+            filter_string = self._run_inputbox("Locale Selection", "Enter a filter string (e.g., 'en_US') or leave blank for all:", default, height=8, width=70)
             if filter_string is None:
                 return None
 
@@ -845,10 +845,12 @@ class UserEntry:
         while True:  # Loop until the user is satisfied and presses OK
             menu_items = []
             for font, label in font_options:
-                menu_items.extend([font, label])
+                menu_items.extend([font, label, "off"]) # sets initial state to off
 
-            # The following code is modified to use --radiolist rather than --menu, and add a --ok-label argument
-            selected_font = self._run_dialog("--radiolist", "Select a console font:", "20", "60", "10", "OK", "Cancel", "on", *menu_items)
+            # The following code is modified to use --radiolist rather than --menu
+            # --radiolist <height> <width> <listheight> <tag1> <item1> <status1> ...
+            cmd = ["--title", "Console Font Selection", "--radiolist", "Select a console font:", "20", "60", "10"] + menu_items
+            selected_font = self._run_dialog(*cmd)
 
             if selected_font:
                 self._set_console_font(selected_font)  # Apply the selected font immediately
@@ -1133,6 +1135,7 @@ if __name__ == '__main__':
     SYSTEM_CHECK = SYSTEM_CHECK and check_uefi()
     SYSTEM_CHECK = SYSTEM_CHECK and check_secure_boot()
 
+    # One check failed, exit installation
     if not SYSTEM_CHECK:
         exit()
 
@@ -1153,11 +1156,11 @@ if __name__ == '__main__':
 
     user_entry.configure_font()
     if not DRIVE: DRIVE = user_entry.configure_drive()
-    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = user_entry.run_yesno("Disk Configuration", "Write random data to entire drive (lengthy operation)?")
+    if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = user_entry.run_yesno("Disk Configuration", "Write random data to entire drive (lengthy operation)?", width=40, height=10)
     if not USER_NAME: USER_NAME = user_entry.configure_username()
     if not USER_PASSWORD: USER_PASSWORD = user_entry.configure_userpassword()
     if not LUKS_PASSWORD: LUKS_PASSWORD = user_entry.configure_lukspassword()
-    if not SYSTEM_HOSTNAME: SYSTEM_HOSTNAME = user_entry.configure_hostname()
+    if not SYSTEM_HOSTNAME: SYSTEM_HOSTNAME = user_entry.configure_hostname(default='archlinux')
     if not SYSTEM_LOCALE: SYSTEM_LOCALE = user_entry.configure_locale()
     if not SYSTEM_KEYB: SYSTEM_KEYB = user_entry.configure_keyboard()
     if not SYSTEM_TIMEZONE: SYSTEM_TIMEZONE = user_entry.configure_timezone()
