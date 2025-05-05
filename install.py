@@ -38,8 +38,7 @@
 # - [X] Hide initial system tests that - correctly - could fail
 # - [X] copy_file_structure uses old logging style
 # - [X] Use Luks 2 for encryption
-# - [ ] Read a config file instead of queering user entry
-# - [ ] Create variable substitution in the same fashion across functions
+# - [-] Create variable substitution in the same fashion across functions. Cannot be done :-(
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -89,18 +88,6 @@ SYSTEM_PKGS = None              # System packages to install
 SYSTEM_CMD = None               # System commands lines
 SYSTEM_MODULES = None           # System modules for mkinitcpio
 SYSTEM_WIPE_DISK = None         # Wipe entire disk before formatting (lengthy)
-
-# Configure me or leave commented out
-# DRIVE = '/dev/sdb'              # The device that will be made into a backup device
-# DRIVE_PASSWORD = '123'          # Encryption password for partitions
-# USER_NAME = 'echjansen'         # User name for backup devices (no root)
-# USER_PASSWORD = '123'           # User password for backup device
-# LUKS_PASSWORD = '123'           # Luks password for drive(s)
-# SYSTEM_HOSTNAME = 'archlinux'   # System host name
-# SYSTEM_LOCALE = 'en_US'         # System locale ('en_US')
-SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
-# SYSTEM_KEYB = 'us'              # System keyboard layout ('us')
-# SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 # 'rich' objects
 COLOR_THEME = {
