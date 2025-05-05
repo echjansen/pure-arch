@@ -10,8 +10,8 @@ linux-firmware
 mkinitcpio
 
 # Filesystem tools
-btrfs-progs
-gparted
+btrfs-progs             # BTRFS file system tools
+gparted                 # partitioning tools
 gptfdisk
 dosfstools              # create FAT partitions
 
@@ -22,24 +22,24 @@ sbsigntools
 edk2-shell              # useful EFI shell in case things go wrong
 
 # Networking
-iwd
+iwd                     # Intel written wireless networking. provided iwctl
 iptables-nft            # includes nftables as a dependency, will automatically uninstall iptables
-firefox
-wget
+firefox                 # web browser
+wget                    # donwload files with http
 dnsmasq                 # used by libvirtd
 glider                  # HTTP proxy used for the network opt-in security measure
 socat                   # used to relay SSH through the HTTP proxy
 
 # Security
-apparmor
-firejail
+apparmor                # protects operating system and apps
+firejail                # protects apps by sandboxing
 xdg-dbus-proxy          # Used by firejail to enforce DBUS policies
-polkit
-keepassxc
+polkit                  # configure security policy
+keepassxc               # password manager
 
 # Backup
-restic
-syncthing
+restic                  # backup tool (encrypted backup)
+syncthing               # file synhronisation tool
 
 # Virtualization/Containerization
 docker
