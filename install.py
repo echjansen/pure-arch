@@ -1258,8 +1258,6 @@ if __name__ == '__main__':
     shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $DRIVE2')
 
 ##- partition 1 ---------------------------------------------------------------
-    # Unmount devices from potential previous attempts that failed
-    shell.execute('Get local mirrors', 'reflector --country $SYSTEM_COUNTRY --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
     #shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE1', input="$LUKS_PASSWORD")
     shell.execute('Partition 1 - Format $PART_1_NAME to Luks','cryptsetup luksFormat --label $PART_1_UUID $DRIVE1', input="$LUKS_PASSWORD")
@@ -1325,6 +1323,7 @@ if __name__ == '__main__':
         if SYSTEM_GPU == 'NVIDIA'  : packages.append('vulkan-nouveau')
 
     SYSTEM_PKGS = ' '.join(packages)
+    shell.execute('Get local mirrors', 'reflector --country $SYSTEM_COUNTRY --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
     shell.execute('Installing Linux packages .... (patience)', 'pacstrap -K /mnt $SYSTEM_PKGS')
 
 #-- Copy config files  --------------------------------------------------------
