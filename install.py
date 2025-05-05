@@ -1321,7 +1321,7 @@ if __name__ == '__main__':
 
 #-- Copy config files  --------------------------------------------------------
 
-    shell.execute('Copy configuration files to system', 'cp -a rootfs /mnt/')
+    shell.execute('Copy configuration files to system', 'cp -a rootfs/* /mnt/')
 
 #-- Patch config files  -------------------------------------------------------
 
