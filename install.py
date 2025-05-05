@@ -400,14 +400,14 @@ def copy_file_structure(source: str, destination: str) -> None:
         source: The path to the source directory.
         destination: The path to the destination directory.
     """
-    log.info(f'Copying file from {source} to {destination}')
+    #log.info(f'Copying file from {source} to {destination}')
 
     try:
         # Check if the source directory exists
         if not os.path.isdir(source):
             source = find_subdirectory(source)
             if not source:
-                log.error(f"Error: Source directory '{source}' not found.", style='error')
+                #log.error(f"Error: Source directory '{source}' not found.", style='error')
                 return
 
         # Create the destination directory if it doesn't exist
@@ -427,7 +427,7 @@ def copy_file_structure(source: str, destination: str) -> None:
                     log.error(f"Warning: Could not copy '{source_file}' to '{dest_file}': {e}")
 
     except Exception as e:
-        log.exception('An unexpected error occurred')
+        #log.exception('An unexpected error occurred')
         return -1, "", str(e)
 
 #----------------------------------------------------------------------------------------------------------------------
@@ -1321,7 +1321,8 @@ if __name__ == '__main__':
 
 #-- Copy config files  --------------------------------------------------------
 
-    shell.execute('Copy configuration files to system', 'cp -a rootfs/* /mnt/')
+    copy_file_structure('rootfs', '/mnt')
+    #shell.execute('Copy configuration files to system', 'cp -a rootfs/* /mnt/') # TODO - this causes issues after install
 
 #-- Patch config files  -------------------------------------------------------
 
