@@ -27,18 +27,11 @@
 #   pacman -S git python-rich
 #   git clone https://github.com/echjansen/pure-arch
 #   cd pure-arch
-#   python secure_arch.py
+#   python install.py
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - [X] Use 'dialog' for the user input
-# - [X] arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
-# - [X] Remove old CommandExecutor
-# - [X] Switch monitor on the fly until correct, then move on
-# - [X] Copy install.log to user home folder
-# - [X] Hide initial system tests that - correctly - could fail
-# - [X] copy_file_structure uses old logging style
-# - [X] Use Luks 2 for encryption
-# - [-] Create variable substitution in the same fashion across functions. Cannot be done :-(
+# - []
+# - []
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -1328,7 +1321,7 @@ if __name__ == '__main__':
 
 #-- Copy config files  --------------------------------------------------------
 
-    shell.execute('Copy configuration files to system', 'cp -a rootf /mnt/')
+    shell.execute('Copy configuration files to system', 'cp -a rootfs /mnt/')
 
 #-- Patch config files  -------------------------------------------------------
 
