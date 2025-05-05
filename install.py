@@ -104,27 +104,24 @@ SYSTEM_COUNTRY = 'Australia'    # System country ('Australia')
 # SYSTEM_TIMEZONE  = 'Australia/Melbourne'   # System timezone
 
 # 'rich' objects
-theme = Theme({
+COLOR_THEME = {
     'info':     'yellow',
     'warning':  'bold yellow',
     'success':  'green',
     'error':    'red',
     'critical': 'bold reverse red',
     'debug':    'blue',
-})
+}
 
 class CustomFormatter(logging.Formatter):
-    COLORS = {
-        'INFO':      'yellow',
-        'WARNING':   'bold yellow',
-        'success':   'green',
-        'ERROR':     'red',
-        'DEBUG':     'blue',
-        'CRITICAL':  'bold reverse red',
-        }
+
+    def __init__(self, theme):
+        super().__init__()
+        self.theme = theme
+        self.COLORS = self.theme
 
     def format(self, record):
-        log_color = self.COLORS.get(record.levelname, 'white')
+        log_color = self.COLORS.get(record.levelname.lower(), 'white')
         record.msg = f'[{log_color}]{record.msg}[/{log_color}]'
         return super().format(record)
 
@@ -951,13 +948,14 @@ class ShellCommandExecutor:
     A class to execute shell commands with rich console output and logging.
     """
 
-    def __init__(self, debug=False, theme=None):
+    def __init__(self, debug=False, theme=None, log_file='install.log'):
         """
         Initializes the ShellCommandExecutor.
 
         Args:
             debug (bool, optional): Enables debug output. Defaults to False.
             theme (dict, optional): A dictionary defining the theme for rich console. Defaults to None.
+            log_file (str, optional): Path to the log file
         """
         if theme is None:
             theme = {
@@ -974,6 +972,20 @@ class ShellCommandExecutor:
         self.console = Console(theme=custom_theme)
         self.debug = debug
         self.theme = theme
+        self.log_file = log_file
+        self._configure_logging()
+
+    def _configure_logging(self):
+        """
+        Configures the logging system.
+        """
+        logging.basicConfig(
+            filename=self.log_file,
+            level=logging.DEBUG if self.debug else logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            filemode='a'  # Append to the log file
+        )
+        logging.info("ShellCommandExecutor initialized.")
 
     def _substitute_globals(self, text):
         """
@@ -1105,7 +1117,8 @@ class ShellCommandExecutor:
 if __name__ == '__main__':
 
 #-- Create objects ------------------------------------------------------------
-    console = Console(theme=theme)
+    theme = COLOR_THEME
+    console = Console(theme=Theme(theme))
     console.clear()
 
     prompt = Prompt()
@@ -1116,7 +1129,8 @@ if __name__ == '__main__':
         show_time=False,            # Do not show logging time
         show_level=True,            # Do show logging level (Info, debug, etc)
         show_path=False)            # Do not show file causing log - always the same
-    handler.setFormatter(CustomFormatter())
+    formatter = CustomFormatter(COLOR_THEME)
+    handler.setFormatter(formatter)
 
     log = logging.getLogger("rich")
     log.setLevel(logging.INFO)
