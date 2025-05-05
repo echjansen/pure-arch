@@ -1124,7 +1124,7 @@ if __name__ == '__main__':
 
     user_entry = UserEntry()
 
-    shell = ShellCommandExecutor(debug=True)
+    shell = ShellCommandExecutor(debug=DEBUG)
 
 #-- System check  -------------------------------------------------------------
     console.print(Rule("System Check"), style='success')
