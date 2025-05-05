@@ -34,6 +34,7 @@
 # - [X] arch-chroot /mnt chpasswd --> FAILS | chpasswd: (line 1, user $USER_NAME) password not changed
 # - [X] Remove old CommandExecutor
 # - [X] Switch monitor on the fly until correct, then move on
+# - [X] Copy install.log to user home folder
 # - [ ] Use Luks 2 for encryption
 # - [ ] copy_file_structure uses old logging style
 #       INFO     Copying file from rootfs to /mnt
@@ -59,7 +60,7 @@ from rich.logging import RichHandler
 from typing import Union
 
 # Debugging variables
-DEBUG = True                   # If True, report on command during execution
+DEBUG = False                  # If True, report on command during execution
 STEP = False                   # If true, step one command at the time
 
 # Global Constants
@@ -1524,6 +1525,7 @@ if __name__ == '__main__':
     shell.execute('Install dotfiles ....(patience)', command)
 
 # -- Done ---------------------------------------------------------------------
+    shell.execute('Copy install.log to $USER_NAME home folder', 'cp install.log /mnt/home/$USER_NAME/install.log')
 
     if prompt.ask("[green]Installation complete successfully. Reboot?[/]", choices=['y', 'n']) == 'y':
         shell.execute('Swapfile off','swapoff -a')
