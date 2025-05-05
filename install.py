@@ -35,13 +35,11 @@
 # - [X] Remove old CommandExecutor
 # - [X] Switch monitor on the fly until correct, then move on
 # - [X] Copy install.log to user home folder
-# - [ ] Use Luks 2 for encryption
-# - [ ] copy_file_structure uses old logging style
-#       INFO     Copying file from rootfs to /mnt
-#       INFO:rich:[yellow]Copying file from rootfs to /mnt[/yellow]
+# - [X] Hide initial system tests that - correctly - could fail
+# - [X] copy_file_structure uses old logging style
+# - [X] Use Luks 2 for encryption
 # - [ ] Read a config file instead of queering user entry
 # - [ ] Create variable substitution in the same fashion across functions
-# - [ ] Hide initial system tests that - correctly - could fail
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import sys
@@ -1027,7 +1025,7 @@ class ShellCommandExecutor:
 
         try:
             # Print description to console
-            self.console.print(f"[{self.theme['warning']}][ ]{description}[/{self.theme['warning']}]", end='\r')
+            self.console.print(f"[{self.theme['warning']}][ ] {description}[/{self.theme['warning']}]", end='\r')
 
             if self.debug:
                 self.console.print(Panel(f"[{self.theme['command']}]{command}[/{self.theme['command']}]", title="Command"))
@@ -1276,7 +1274,8 @@ if __name__ == '__main__':
     # Unmount devices from potential previous attempts that failed
     shell.execute('Get local mirrors', 'reflector --country $SYSTEM_COUNTRY --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
-    shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE1',input="$LUKS_PASSWORD")
+    #shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE1', input="$LUKS_PASSWORD")
+    shell.execute('Partition 1 - Format $PART_1_NAME to Luks','cryptsetup luksFormat --label $PART_1_UUID $DRIVE1', input="$LUKS_PASSWORD")
     shell.execute('Partition 1 - Open $PART_1_NAME', 'cryptsetup luksOpen $DRIVE1 $PART_1_UUID' ,input="$LUKS_PASSWORD")
 
     shell.execute('Partition 1 - Set file system $PART_1_NAME to BTRFS', 'mkfs.btrfs --label $PART_1_UUID /dev/mapper/$PART_1_UUID')
@@ -1343,7 +1342,7 @@ if __name__ == '__main__':
 
 #-- Copy config files  --------------------------------------------------------
 
-    copy_file_structure('rootfs', '/mnt')
+    shell.execute('Copy configuration files to system', 'cp -a rootf /mnt/')
 
 #-- Patch config files  -------------------------------------------------------
 
