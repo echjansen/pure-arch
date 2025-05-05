@@ -1077,7 +1077,7 @@ class ShellCommandExecutor:
                 if check_returncode:
                     self.console.print(f"[{self.theme['success']}][✓] {description}[/{self.theme['success']}]")
                 else:
-                    self.console.print(f"[{self.theme['warning']}][✓] {description} (return code ignored)[/{self.theme['warning']}]")
+                    self.console.print(f"[{self.theme['success']}][✓] {description} (return code ignored)[/{self.theme['success']}]")
 
             # Store output in global variable if specified
             if output_var:
@@ -1255,6 +1255,11 @@ if __name__ == '__main__':
 #-- Disk Partitioning, Formatting and Mounting  -------------------------------
     console.print(Rule("System Installation"), style='success')
 
+    # Unmount and close any previous attemepts
+    shell.execute('Swapfiles deactivated','swapoff -a', check_returncode=False)
+    shell.execute('Partitions unmounted', 'umount --recursive /mnt', check_returncode=False)
+    shell.execute('Encrypted drives closed', 'cryptsetup luksClose $PART_1_UUID', check_returncode=False)
+
     # Write random data to the whole disk
     if SYSTEM_WIPE_DISK: shell.execute('Disk - Write random data to disk', 'dd bs=1M if=/dev/urandom of=$DRIVE', check_returncode=False)
     shell.execute('Disk - Remove file magic bytes','wipefs --all $DRIVE')
@@ -1269,9 +1274,6 @@ if __name__ == '__main__':
 
 ##- partition 1 ---------------------------------------------------------------
     # Unmount devices from potential previous attempts that failed
-    shell.execute('Swapfiles deactivated','swapoff -a', check_returncode=False)
-    shell.execute('Partitions unmounted', 'umount --recursive /mnt', check_returncode=False)
-    shell.execute('Encrypted drives closed', 'cryptsetup luksClose $PART_1_UUID', check_returncode=False)
     shell.execute('Get local mirrors', 'reflector --country $SYSTEM_COUNTRY --latest 10 --sort rate --save /etc/pacman.d/mirrorlist')
 
     shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE1',input="$LUKS_PASSWORD")
