@@ -65,9 +65,8 @@ BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
-DRIVE_ROOT = None               # Root drive (contains all data) - first partition
-DRIVE_BOOT = None               # Boot drive (contains unified kernel) - second partition
-DRIVE_PASSWORD = None           # Encryption password for partitions
+PART_ROOT = None                # Root drive (contains all data) - first partition
+PART_BOOT = None                # Boot drive (contains unified kernel) - second partition
 USER_NAME = None                # User name for backup devices (no root)
 USER_PASSWORD = None            # User password for backup device
 LUKS_PASSWORD = None            # Luks password for drive(s)
@@ -1201,6 +1200,9 @@ if __name__ == '__main__':
 
     user_entry.configure_font()
     if not DRIVE: DRIVE = user_entry.configure_drive()
+    #  partition names (/dev/sda1, /dev/nvme0n1p1)
+    PART_ROOT = get_partition(DRIVE, 1)
+    PART_BOOT = get_partition(DRIVE, 2)
     if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = user_entry.run_yesno("Disk Configuration", "Write random data to entire drive (lengthy operation)?", width=40, height=10)
     if not USER_NAME: USER_NAME = user_entry.configure_username()
     if not USER_PASSWORD: USER_PASSWORD = user_entry.configure_userpassword()
@@ -1241,13 +1243,13 @@ if __name__ == '__main__':
     else:
         console.print('No drive selected.', style='critical')
 
-    if DRIVE_BOOT:
-        console.print(f'Boot partition ......: [green]{DRIVE_BOOT}[/]', style='info')
+    if PART_BOOT:
+        console.print(f'Boot partition ......: [green]{PART_BOOT}[/]', style='info')
     else:
         console.print('No boot partition selected.', style='critical')
 
-    if DRIVE_ROOT:
-        console.print(f'Root partition ......: [green]{DRIVE_ROOT}[/]', style='info')
+    if PART_ROOT:
+        console.print(f'Root partition ......: [green]{PART_ROOT}[/]', style='info')
     else:
         console.print('No root partition selected.', style='critical')
 
@@ -1308,19 +1310,15 @@ if __name__ == '__main__':
     shell.execute('Partitioning - Create partition table', 'sgdisk --clear $DRIVE --new 1::-551MiB --new 2::0 --typecode 2:ef00 $DRIVE')
     shell.execute('Partitioning - Name the partitions', 'sgdisk $DRIVE --change-name=1:$PART_1_NAME --change-name=2:$PART_2_NAME')
 
-    # Get partition names (/dev/sda1, /dev/nvme0n1p1)
-    DRIVE_ROOT = get_partition(DRIVE, 1)
-    DRIVE_BOOT = get_partition(DRIVE, 2)
-
     # Format partitions
     # -- partition 2 - Boot  ---------------------------------------------------
-    shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $DRIVE_BOOT')
+    shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $PART_BOOT')
 
 ##- partition 1 ---------------------------------------------------------------
 
-    #shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE_ROOT', input="$LUKS_PASSWORD")
-    shell.execute('Partition 1 - Format $PART_1_NAME to Luks','cryptsetup luksFormat --label $PART_1_UUID $DRIVE_ROOT', input="$LUKS_PASSWORD")
-    shell.execute('Partition 1 - Open $PART_1_NAME', 'cryptsetup luksOpen $DRIVE_ROOT $PART_1_UUID' ,input="$LUKS_PASSWORD")
+    #shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $PART_ROOT', input="$LUKS_PASSWORD")
+    shell.execute('Partition 1 - Format $PART_1_NAME to Luks','cryptsetup luksFormat --label $PART_1_UUID $PART_ROOT', input="$LUKS_PASSWORD")
+    shell.execute('Partition 1 - Open $PART_1_NAME', 'cryptsetup luksOpen $PART_ROOT $PART_1_UUID' ,input="$LUKS_PASSWORD")
 
     shell.execute('Partition 1 - Set file system $PART_1_NAME to BTRFS', 'mkfs.btrfs --label $PART_1_UUID /dev/mapper/$PART_1_UUID')
     shell.execute('Partition 1 - Mount $PART_1_NAME', 'mount /dev/mapper/$PART_1_UUID /mnt')
@@ -1357,7 +1355,7 @@ if __name__ == '__main__':
 
 ##- partition 2 ---------------------------------------------------------------
 
-    shell.execute('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 $DRIVE_BOOT /mnt/efi')
+    shell.execute('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 $PART_BOOT /mnt/efi')
 
 ##- swap file -----------------------------------------------------------------
 
@@ -1404,7 +1402,7 @@ if __name__ == '__main__':
     SYSTEM_CMD = [
         'lsm=landlock,lockdown,yama,integrity,apparmor,bpf', # Customize Linux Security Modules to include AppArmor
         'lockdown=integrity',                                # Put kernel in integrity lockdown mode
-        f'cryptdevice={DRIVE_ROOT}:{PART_1_UUID}',           # The LUKS device to decrypt
+        f'cryptdevice={PART_ROOT}:{PART_1_UUID}',           # The LUKS device to decrypt
         f'root=/dev/mapper/{PART_1_UUID}',                   # The decrypted device to mount as the root
         'rootflags=subvol=@',                                # Mount the @ btrfs subvolume inside the decrypted device as the root
         'mem_sleep_default=deep',                            # Allow suspend state (puts device into sleep but keeps powering the RAM for fast sleep mode recovery)
