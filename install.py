@@ -34,6 +34,7 @@
 # - []
 #----------------------------------------------------------------------------------------------------------------------
 import os
+import re
 import sys
 import shutil
 import logging
@@ -64,6 +65,8 @@ BTRFS_MOUNT_OPT = "defaults,noatime,nodiratime,compress=zstd,space_cache=v2"
 
 # Global Variables
 DRIVE = None                    # The device that will be made into a backup device
+DRIVE_ROOT = None               # Root drive (contains all data) - first partition
+DRIVE_BOOT = None               # Boot drive (contains unified kernel) - second partition
 DRIVE_PASSWORD = None           # Encryption password for partitions
 USER_NAME = None                # User name for backup devices (no root)
 USER_PASSWORD = None            # User password for backup device
@@ -295,7 +298,7 @@ def get_virtualizer() -> str:
         if output:
             return output
         else:
-            return "metal"  # Running on bare metal
+            return "none"  # Running on bare metal
 
     except subprocess.CalledProcessError as e:
         console.print(f"Error executing systemd-detect-virt: {e}", style='critical')
@@ -348,6 +351,55 @@ def get_packages_from_file(filepath: str) -> List[str]:
         console.print(f"An error occurred: {e}", style='critical')
 
     return packages
+
+def get_partition(device: str, partition_no: int):
+    """
+    Determines the partition anme of a given device using the 'ls' command.
+
+    Args:
+        device (str): The device name (e.g., '/dev/sda' or '/dev/nvme0n1').
+        partition_no (int): The partiton number (e.g., '1' format '/dev/nvme0n1p1').
+
+    Returns:
+        str: The name of the first partition (e.g., '/dev/sda1'), or None if no partition is found.
+        None: If the device doesn't exist or if an error occurs while listing partitions.
+    """
+    try:
+        # Construct the 'ls' command to list files matching the device name + a digit
+        command = f"ls {device}[0-9] 2>/dev/null" # Redirect stderr to null to suppress error messages from ls
+
+        # Execute the command and capture the output
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = process.communicate()
+
+        # Check the return code
+        if process.returncode != 0:
+            #Error executing the command. Probably the device is not there
+            return None
+
+
+        # Parse the output to find the first partition
+        partitions = stdout.strip().split('\n')
+        if partitions:
+            # Sort the partition names to ensure we get the numerically first one
+            partitions.sort() # important in case /dev/sda10 comes before /dev/sda1
+
+            #Basic validation to confirm it really looks like a partition
+            this_partition = partitions[partition_no-1]
+
+            if re.match(rf"^{device}[0-9]+$", this_partition):  # Check if the partition matches the expected pattern
+                return this_partition
+            else:
+                return None
+        else:
+            return None  # No partitions found
+
+    except FileNotFoundError:
+        console.print("Error: 'ls' command not found.  Please ensure it is in your PATH.", style='critical')
+        return None
+    except Exception as e:
+        console.print(f"An error occurred: {e}", style='critical')
+        return None
 
 def find_subdirectory(source_name: str) -> Union[str, None]:
     """
@@ -1184,13 +1236,23 @@ if __name__ == '__main__':
     else:
         console.print('GPU internal not selected', style='critical')
 
-    if SYSTEM_VIRT:
-        console.print(f'Virtualiser .........: [green]{SYSTEM_VIRT}[/]', style='info')
-
     if DRIVE:
         console.print(f'Selected drive ......: [green]{DRIVE}[/]', style='info')
     else:
         console.print('No drive selected.', style='critical')
+
+    if DRIVE_BOOT:
+        console.print(f'Boot partition ......: [green]{DRIVE_BOOT}[/]', style='info')
+    else:
+        console.print('No boot partition selected.', style='critical')
+
+    if DRIVE_ROOT:
+        console.print(f'Root partition ......: [green]{DRIVE_ROOT}[/]', style='info')
+    else:
+        console.print('No root partition selected.', style='critical')
+
+    if SYSTEM_VIRT:
+        console.print(f'Virtualiser .........: [green]{SYSTEM_VIRT}[/]', style='info')
 
     if USER_NAME:
         console.print(f'Selected username ...: [green]{USER_NAME}[/]', style='info')
@@ -1246,15 +1308,19 @@ if __name__ == '__main__':
     shell.execute('Partitioning - Create partition table', 'sgdisk --clear $DRIVE --new 1::-551MiB --new 2::0 --typecode 2:ef00 $DRIVE')
     shell.execute('Partitioning - Name the partitions', 'sgdisk $DRIVE --change-name=1:$PART_1_NAME --change-name=2:$PART_2_NAME')
 
+    # Get partition names (/dev/sda1, /dev/nvme0n1p1)
+    DRIVE_ROOT = get_partition(DRIVE, 1)
+    DRIVE_BOOT = get_partition(DRIVE, 2)
+
     # Format partitions
-    # -- partition 2 - Root  ---------------------------------------------------
-    shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $DRIVE2')
+    # -- partition 2 - Boot  ---------------------------------------------------
+    shell.execute('Partition 2 - Formatting $PART_2_NAME','mkfs.vfat -n $PART_2_NAME -F 32 $DRIVE_BOOT')
 
 ##- partition 1 ---------------------------------------------------------------
 
-    #shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE1', input="$LUKS_PASSWORD")
-    shell.execute('Partition 1 - Format $PART_1_NAME to Luks','cryptsetup luksFormat --label $PART_1_UUID $DRIVE1', input="$LUKS_PASSWORD")
-    shell.execute('Partition 1 - Open $PART_1_NAME', 'cryptsetup luksOpen $DRIVE1 $PART_1_UUID' ,input="$LUKS_PASSWORD")
+    #shell.execute('Partition 1 - Format to Luks $PART_1_NAME','cryptsetup luksFormat -q --type luks1 --label $PART_1_UUID $DRIVE_ROOT', input="$LUKS_PASSWORD")
+    shell.execute('Partition 1 - Format $PART_1_NAME to Luks','cryptsetup luksFormat --label $PART_1_UUID $DRIVE_ROOT', input="$LUKS_PASSWORD")
+    shell.execute('Partition 1 - Open $PART_1_NAME', 'cryptsetup luksOpen $DRIVE_ROOT $PART_1_UUID' ,input="$LUKS_PASSWORD")
 
     shell.execute('Partition 1 - Set file system $PART_1_NAME to BTRFS', 'mkfs.btrfs --label $PART_1_UUID /dev/mapper/$PART_1_UUID')
     shell.execute('Partition 1 - Mount $PART_1_NAME', 'mount /dev/mapper/$PART_1_UUID /mnt')
@@ -1291,7 +1357,7 @@ if __name__ == '__main__':
 
 ##- partition 2 ---------------------------------------------------------------
 
-    shell.execute('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 $DRIVE2 /mnt/efi')
+    shell.execute('Partition 2 - Mount "/mnt/efi"',         'mount --mkdir -o umask=0077 $DRIVE_BOOT /mnt/efi')
 
 ##- swap file -----------------------------------------------------------------
 
@@ -1338,7 +1404,7 @@ if __name__ == '__main__':
     SYSTEM_CMD = [
         'lsm=landlock,lockdown,yama,integrity,apparmor,bpf', # Customize Linux Security Modules to include AppArmor
         'lockdown=integrity',                                # Put kernel in integrity lockdown mode
-        f'cryptdevice={DRIVE}1:{PART_1_UUID}',               # The LUKS device to decrypt
+        f'cryptdevice={DRIVE_ROOT}:{PART_1_UUID}',           # The LUKS device to decrypt
         f'root=/dev/mapper/{PART_1_UUID}',                   # The decrypted device to mount as the root
         'rootflags=subvol=@',                                # Mount the @ btrfs subvolume inside the decrypted device as the root
         'mem_sleep_default=deep',                            # Allow suspend state (puts device into sleep but keeps powering the RAM for fast sleep mode recovery)
