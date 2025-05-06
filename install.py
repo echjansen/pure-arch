@@ -30,8 +30,8 @@
 #   python install.py
 #----------------------------------------------------------------------------------------------------------------------
 # Todos:
-# - []
-# - []
+# - [ ] Fix variable substition. DISK = 'sda' and DISK_BOOT becomes sda_BOOT
+# - [ ]
 #----------------------------------------------------------------------------------------------------------------------
 import os
 import re
@@ -353,45 +353,47 @@ def get_packages_from_file(filepath: str) -> List[str]:
 
 def get_partition(device: str, partition_no: int):
     """
-    Determines the partition anme of a given device using the 'ls' command.
+    Determines the first partition of a given device using the 'ls' command.
 
     Args:
         device (str): The device name (e.g., '/dev/sda' or '/dev/nvme0n1').
         partition_no (int): The partiton number (e.g., '1' format '/dev/nvme0n1p1').
 
     Returns:
-        str: The name of the first partition (e.g., '/dev/sda1'), or None if no partition is found.
+        str: The name of the partition (e.g., '/dev/sda1' or '/dev/nvme0n1p1'),
+             or None if no partition is found.
         None: If the device doesn't exist or if an error occurs while listing partitions.
     """
-    try:
-        # Construct the 'ls' command to list files matching the device name + a digit
-        command = f"ls {device}[0-9] 2>/dev/null" # Redirect stderr to null to suppress error messages from ls
 
-        # Execute the command and capture the output
+    def _get_partitions(device, pattern):
+        """Helper function to run ls with a specific pattern."""
+        command = f"ls {device}{pattern} 2>/dev/null"
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         stdout, stderr = process.communicate()
+        if process.returncode == 0:
+            return stdout.strip().split('\n')
+        else:
+            return []
 
-        # Check the return code
-        if process.returncode != 0:
-            #Error executing the command. Probably the device is not there
-            return None
+    try:
+        # Try the NVMe-style pattern first
+        partitions = _get_partitions(device, "p*[0-9]")  # Matches nvme0n1p1, nvme0n1p2, etc.
 
+        # If NVMe-style partitions weren't found, try the sdX-style pattern
+        if not partitions:
+            partitions = _get_partitions(device, "[0-9]")  # Matches sda1, sda2, etc.
 
-        # Parse the output to find the first partition
-        partitions = stdout.strip().split('\n')
         if partitions:
-            # Sort the partition names to ensure we get the numerically first one
-            partitions.sort() # important in case /dev/sda10 comes before /dev/sda1
+            partitions.sort()
+            first_partition = partitions[partition_no -1]
 
-            #Basic validation to confirm it really looks like a partition
-            this_partition = partitions[partition_no-1]
-
-            if re.match(rf"^{device}[0-9]+$", this_partition):  # Check if the partition matches the expected pattern
-                return this_partition
+            # Updated regex to match both /dev/sda1 and /dev/nvme0n1p1 formats
+            if re.match(rf"^{device}(p?[0-9]+|[0-9]+)$", first_partition):
+                return first_partition
             else:
                 return None
         else:
-            return None  # No partitions found
+            return None
 
     except FileNotFoundError:
         console.print("Error: 'ls' command not found.  Please ensure it is in your PATH.", style='critical')
@@ -1200,9 +1202,6 @@ if __name__ == '__main__':
 
     user_entry.configure_font()
     if not DRIVE: DRIVE = user_entry.configure_drive()
-    #  partition names (/dev/sda1, /dev/nvme0n1p1)
-    PART_ROOT = get_partition(DRIVE, 1)
-    PART_BOOT = get_partition(DRIVE, 2)
     if not SYSTEM_WIPE_DISK: SYSTEM_WIPE_DISK = user_entry.run_yesno("Disk Configuration", "Write random data to entire drive (lengthy operation)?", width=40, height=10)
     if not USER_NAME: USER_NAME = user_entry.configure_username()
     if not USER_PASSWORD: USER_PASSWORD = user_entry.configure_userpassword()
@@ -1242,16 +1241,6 @@ if __name__ == '__main__':
         console.print(f'Selected drive ......: [green]{DRIVE}[/]', style='info')
     else:
         console.print('No drive selected.', style='critical')
-
-    if PART_BOOT:
-        console.print(f'Boot partition ......: [green]{PART_BOOT}[/]', style='info')
-    else:
-        console.print('No boot partition selected.', style='critical')
-
-    if PART_ROOT:
-        console.print(f'Root partition ......: [green]{PART_ROOT}[/]', style='info')
-    else:
-        console.print('No root partition selected.', style='critical')
 
     if SYSTEM_VIRT:
         console.print(f'Virtualiser .........: [green]{SYSTEM_VIRT}[/]', style='info')
@@ -1309,6 +1298,10 @@ if __name__ == '__main__':
     # Create partition table and name partitions
     shell.execute('Partitioning - Create partition table', 'sgdisk --clear $DRIVE --new 1::-551MiB --new 2::0 --typecode 2:ef00 $DRIVE')
     shell.execute('Partitioning - Name the partitions', 'sgdisk $DRIVE --change-name=1:$PART_1_NAME --change-name=2:$PART_2_NAME')
+
+    # Get the proper partition names (/dev/sda1 or /dev/nvme*p1)
+    PART_ROOT = get_partition(DRIVE, 1)
+    PART_BOOT = get_partition(DRIVE, 2)
 
     # Format partitions
     # -- partition 2 - Boot  ---------------------------------------------------
