@@ -12,11 +12,12 @@ A security focused  Arch Linux Operating System installer using python.
 - [ ] **strict firewall rules**
 
 ## Installation
-Requirements
+
+### Requirements
 - Latest live Arch Linux ISO
 - A hard drive of 15GB
 
-Installation instructions:
+### Installation instructions:
 ```bash
 pacman -Sy                                        # Update the Arch keyring
 pacman -S git                                     # Install git
