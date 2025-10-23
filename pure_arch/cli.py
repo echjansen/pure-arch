@@ -7,15 +7,34 @@ from pathlib import Path
 from pydantic import ValidationError
 
 # Import the specific configuration model
-from .config.models import ArchInstallerConfig
+from utils.exceptions import ShellCommandError
+
+from config.models import ArchInstallerConfig
+from executors.disk import DiskExecutor
 
 # --- Configuration Constants (Assuming the PROJECT_ROOT logic is in place) ---
 
 # Define the root of the project (assuming two levels up from cli.py)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_ENV_VAR = "MY_APP_CONFIG_PATH"
-# Default path to the project-local configuration file
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / ".config" / "pure_arch.toml"
+# PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+# CONFIG_ENV_VAR = "MY_APP_CONFIG_PATH"
+# # Default path to the project-local configuration file
+# DEFAULT_CONFIG_PATH = PROJECT_ROOT / ".config" / "pure_arch.toml"
+
+CLI_DIR = Path(__file__).resolve().parent
+
+# 2. Define the path relative to the cli.py directory
+# Assuming the structure is: my_app/cli.py <- (up one) -> config/default.toml
+# You may need to adjust the number of .parent calls depending on your exact structure.
+
+# If the structure is: pure_arch/my_app/cli.py and pure_arch/config/default.toml
+# Then: CLI_DIR (pure_arch/my_app) -> parent (pure_arch) -> config/default.toml
+PROJECT_ROOT = CLI_DIR  #Adjust based on where pure_arch starts
+
+# Define the constants using the calculated root
+DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "pure_arch.toml"
+# ----------------------
+
+CONFIG_ENV_VAR = "ARCH_CONFIG_FILE"
 
 # --- Typer Application Instance ---
 
@@ -117,6 +136,37 @@ def run_installer(
             raise typer.Exit()
 
         typer.echo(typer.style("Confirmation received. Starting full installation...", fg=typer.colors.GREEN, bold=True))
+
+        # 4. EXECUTION PIPELINE START 🚨 (The main integration point)
+
+        try:
+            typer.echo("--- PHASE 02: Disk and Filesystem Setup ---")
+
+            # Instantiate the DiskExecutor with the validated config and the dry_run status
+            disk_executor = DiskExecutor(config=config, dryrun=dry_run)
+
+            # Execute the disk setup phase
+            disk_executor.run()
+
+            # --- PHASE 03, 04, etc. executors would follow here ---
+            # BaseOSExecutor(config).run()
+            # SystemConfigExecutor(config).run()
+
+            typer.echo(typer.style("\nInstallation Complete! 🎉", fg=typer.colors.GREEN, bold=True))
+
+        except ShellCommandError as e:
+            # Catch specific execution errors from the Executor
+            typer.echo(f"\n🚨 FATAL INSTALLATION ERROR during disk setup: {e.message}", err=True)
+            typer.echo(f"Command Failed: {e.command}", err=True)
+            typer.echo(f"Stdout:\n{e.stdout}", err=True)
+            typer.echo(f"Stderr:\n{e.stderr}", err=True)
+            raise typer.Exit(code=1)
+
+        except Exception as e:
+            # Catch unexpected errors
+            typer.echo(f"\n🚨 UNEXPECTED ERROR: {e}", err=True)
+            raise typer.Exit(code=1)
+
     else:
         typer.echo("--- DRY RUN MODE: Review complete. No changes will be made ---")
 
