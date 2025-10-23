@@ -3,10 +3,11 @@
 import tomlkit
 import typer
 from pydantic import BaseModel, Field, SecretStr, conlist, computed_field
-from typing import List, Optional, Union, Literal, Set, Tuple, Any
+from typing import List, Optional, Union, Literal, Tuple, Any
 from pathlib import Path
 
 # --- 1. Sub-Models ---
+
 
 # System Configuration
 class Host(BaseModel):
@@ -15,6 +16,7 @@ class Host(BaseModel):
     cpu: Literal["auto", "intel", "amd", "none"]
     gpu: Literal["auto", "nvidia", "amd", "intel"]
     opensource: bool
+
 
 # Partition Configuration
 class Partition(BaseModel):
@@ -39,6 +41,7 @@ class Partition(BaseModel):
     # Btrfs Fields
     btrfsoptions: Optional[str] = Field(None)
     btrfssubvolumes: Optional[List[str]] = Field(None)
+
 
 # Disk Configuration
 class Disk(BaseModel):

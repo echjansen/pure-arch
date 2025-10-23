@@ -1,8 +1,8 @@
 # pure_arch/__main__.py
 from . import core
-from cli import app
-from utils.logger import initialize_app_logger
-from utils.executor import Executor
+from pure_arch.cli import app
+from pure_arch.utils.logger import initialize_app_logger
+from pure_arch.utils.executor import Executor
 
 def logger():
     """

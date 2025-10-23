@@ -7,10 +7,10 @@ from pathlib import Path
 from pydantic import ValidationError
 
 # Import the specific configuration model
-from utils.exceptions import ShellCommandError
+from pure_arch.utils.exceptions import ShellCommandError
 
-from config.models import ArchInstallerConfig
-from executors.disk import DiskExecutor
+from pure_arch.config.models import ArchInstallerConfig
+from pure_arch.executors.disk import DiskManager
 
 # --- Configuration Constants (Assuming the PROJECT_ROOT logic is in place) ---
 
