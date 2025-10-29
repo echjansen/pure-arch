@@ -1,11 +1,9 @@
 # pure_arch/executors/disk.py
 import os
-import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Tuple
 
-from utils.executor import Executor
-from utils.exceptions import ShellCommandError
-from core import app_logger
+from pure_arch.utils.executor import Executor
+from pure_arch.core import app_logger
 
 # Global constants for mount paths
 MOUNT_ROOT = "/mnt"
@@ -83,24 +81,38 @@ class DiskManager:
 
     def create_partition(self, device: str, start: str, size: str, type_code: str = "8300") -> Tuple[int, str, str]:
         """
-        Creates a new partition using sgdisk/gdisk. This is a simplified function.
-        For a full installer, use 'parted' or 'sfdisk' for more control or better scripting.
+        Creates a new GPT partition using sgdisk.
 
         Args:
             device (str): The disk device path (e.g., '/dev/sda').
-            start (str): Start sector/size (e.g., '+1MiB').
+            start (str): Start sector/size (e.g., '0', '+1MiB'). Note: 'sgdisk' often prefers '0' for default start.
             size (str): Size/end sector (e.g., '+512M' or '0' for rest of disk).
             type_code (str): GPT partition type code (e.g., 'EF00' for EFI, '8300' for Linux).
 
         Returns:
             Tuple[int, str, str]: (exit_code, stdout, stderr).
         """
-        # Using a single-line command for simplicity, a sequence of commands might be better
-        # For a clean slate: sgdisk -o /dev/sda
-        # Then: sgdisk -n 0:0:+512MiB -t 0:EF00 /dev/sda
-        command = ["parted", "-s", device, "mkpart", "primary", start, size]
+
+        # sgdisk -n {part_num}:{start}:{end} -t {part_num}:{type_code} {device}
+        # We use '0' for the partition number, which tells sgdisk to automatically
+        # select the next available partition number.
+        # We use the provided 'start' and 'size' for the partition boundaries.
+
+        # sgdisk command to create partition and set its type in a single run
+        command = [
+            "sgdisk",
+            f"-n 0:{start}:{size}",  # -n {part_num}:{start}:{end}
+            f"-t 0:{type_code}",     # -t {part_num}:{type_code}
+            device
+        ]
+
+        # NOTE: The sgdisk documentation often implies '0' for start means the first
+        # available sector, and '0' for size means the rest of the disk.
+        # The variables 'start' and 'size' are used directly as parameters for maximum
+        # flexibility, matching the original function's intent.
+
         return self.executor.run(
-            description=f"Creating partition on {device} (Start: {start}, Size: {size}, Type: {type_code})",
+            description=f"Creating GPT partition on {device} (Start: {start}, Size: {size}, Type: {type_code}) using sgdisk",
             command=command,
             verbose=True,
             check=True
@@ -220,20 +232,41 @@ class DiskManager:
     def mount_partition(self, source: str, target: str, options: Optional[str] = None) -> Tuple[int, str, str]:
         """
         Mounts a filesystem/partition to a target directory.
+        Ensures the target directory exists before attempting to mount.
 
         Args:
-            source (str): The device or volume to mount (e.g., '/dev/mapper/cryptroot', '/dev/sda1').
+            source (str): The device or volume to mount (e.g., '/dev/sda1').
             target (str): The mount point (e.g., '/mnt', '/mnt/boot').
             options (Optional[str]): Optional mount options (e.g., 'defaults,noatime').
 
         Returns:
-            Tuple[int, str, str]: (exit_code, stdout, stderr).
+            Tuple[int, str, str]: (exit_code, stdout, stderr) of the mount command.
+                                  Raises an exception via check=True if directory creation fails.
         """
+
+        # 1. Ensure the target directory exists.
+        # This is a critical step for a reliable mount operation.
+        if not os.path.isdir(target):
+            # Using mkdir -p ensures all parent directories are created
+            # and it doesn't fail if the directory already exists (though we checked).
+            mkdir_command = ["mkdir", "-p", target]
+
+            # Execute directory creation. We check this strictly.
+            self.executor.run(
+                description=f"Ensuring mount target directory {target} exists",
+                command=mkdir_command,
+                verbose=False,
+                check=True  # Ensure creation succeeds before proceeding to mount
+            )
+
+        # 2. Prepare the mount command.
         command = ["mount"]
         if options:
             command.extend(["-o", options])
+
         command.extend([source, target])
 
+        # 3. Execute the mount command.
         return self.executor.run(
             description=f"Mounting {source} to {target} (Options: {options or 'default'})",
             command=command,

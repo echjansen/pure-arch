@@ -189,6 +189,70 @@ class Executor:
             self.logger.critical(f"An unhandled exception occurred during low-level execution of '{cmd_string_for_log}': {e}", exc_info=True)
             raise ShellCommandError(cmd_string_for_log, -1, "", "", f"An unexpected error occurred: {e}")
 
+    # def run(self,
+    #         description: str,
+    #         command: Union[str, list],
+    #         chroot: bool = False,
+    #         dryrun: bool = False,
+    #         capture_output: bool = True,
+    #         timeout: Optional[float] = None,
+    #         check: bool = True,
+    #         shell: bool = False,
+    #         cwd: Optional[str] = None
+    #         ) -> Tuple[int, str, str]:
+    #     """
+    #     Executes a shell command using the RichAppLogger's execution_step context manager
+    #     for enhanced TUI feedback, logging, and centralized exception handling.
+    #     """
+    #     original_command_str = shlex.join(command) if isinstance(command, list) else command
+
+    #     # Prepare the command list (handles shlex.split and arch-chroot prepending)
+    #     prepared_command_list = self._prepare_command(command, chroot=chroot)
+
+    #     #self.logger.info(f"Command to execute: {original_command_str}")
+
+    #     if dryrun:
+    #         self.logger.info(f"DRY RUN: Execution skipped for: '{description}'")
+    #         self.logger.debug(f"DRY RUN COMMAND (Prepared): {shlex.join(prepared_command_list)}")
+    #         return 0, "DRY_RUN_STDOUT", "DRY_RUN_STDERR"
+
+    #     # --- CORE LOGIC: Use logger.execution_step for TUI/Logging ---
+    #     try:
+    #         with self.logger.execution_step(description):
+
+    #             # Command passed to execute_command depends on the 'shell' flag
+    #             cmd_to_pass = prepared_command_list if not shell else original_command_str
+
+    #             exit_code, stdout, stderr = self.execute_command(
+    #                 command=cmd_to_pass,
+    #                 capture_output=capture_output,
+    #                 timeout=timeout,
+    #                 check=check,
+    #                 shell=shell,
+    #                 cwd=cwd
+    #             )
+
+    #         # Success Path: Log captured output at DEBUG level after TUI success is shown
+    #         self.logger.debug(f"Command '{description}' successfully completed. Output details:")
+    #         if stdout:
+    #             self.logger.debug(f"  Stdout:\n{stdout.strip()}")
+    #         if stderr:
+    #             self.logger.debug(f"  Stderr:\n{stderr.strip()}")
+
+    #         return exit_code, stdout, stderr
+
+    #     except ShellCommandError as e:
+    #         # Failure Path: execution_step handles TUI printing and file logging (exception).
+    #         # We only re-raise the specific, enhanced exception.
+    #         self.logger.error(f"Execution failed for '{description}'. Reason: {e.args[0]}")
+    #         raise e
+
+    #     except Exception as e:
+    #         # Catch unexpected errors. execution_step's internal handler will log and print TUI traceback.
+    #         self.logger.critical(f"An unexpected error occurred during run() for '{description}': {e}", exc_info=True)
+    #         raise
+
+
     def run(self,
             description: str,
             command: Union[str, list],
@@ -204,35 +268,47 @@ class Executor:
         Executes a shell command using the RichAppLogger's execution_step context manager
         for enhanced TUI feedback, logging, and centralized exception handling.
         """
+
         original_command_str = shlex.join(command) if isinstance(command, list) else command
 
         # Prepare the command list (handles shlex.split and arch-chroot prepending)
         prepared_command_list = self._prepare_command(command, chroot=chroot)
-
-        self.logger.info(f"Command to execute: {original_command_str}")
 
         if dryrun:
             self.logger.info(f"DRY RUN: Execution skipped for: '{description}'")
             self.logger.debug(f"DRY RUN COMMAND (Prepared): {shlex.join(prepared_command_list)}")
             return 0, "DRY_RUN_STDOUT", "DRY_RUN_STDERR"
 
-        # --- CORE LOGIC: Use logger.execution_step for TUI/Logging ---
-        try:
-            with self.logger.execution_step(description):
+        # --- CORE LOGIC: Reliance on logger.execution_step for TUI/Logging ---
 
-                # Command passed to execute_command depends on the 'shell' flag
-                cmd_to_pass = prepared_command_list if not shell else original_command_str
+        # 1. Start the context manager. It prints the RUNNING status to TUI and log file.
+        with self.logger.execution_step(description):
 
-                exit_code, stdout, stderr = self.execute_command(
-                    command=cmd_to_pass,
-                    capture_output=capture_output,
-                    timeout=timeout,
-                    check=check,
-                    shell=shell,
-                    cwd=cwd
-                )
+            # Command passed to execute_command depends on the 'shell' flag
+            cmd_to_pass = prepared_command_list if not shell else original_command_str
 
-            # Success Path: Log captured output at DEBUG level after TUI success is shown
+            # 2. Execute the low-level command. This call will either:
+            #    a) Return successfully (exit_code 0).
+            #    b) Raise a ShellCommandError (or subclass) if 'check=True' and exit_code != 0.
+            #    c) Raise a general exception (e.g., TimeoutExpired, which execute_command converts).
+
+            exit_code, stdout, stderr = self.execute_command(
+                command=cmd_to_pass,
+                capture_output=capture_output,
+                timeout=timeout,
+                check=check,
+                shell=shell,
+                cwd=cwd
+            )
+
+            # 3. Success Path (Only reached if execute_command completes without raising)
+            #    When this block exits, logger.execution_step automatically:
+            #    - Stops the TUI spinner (overwriting the [RUNNING] line).
+            #    - Prints the final '✔ [COMPLETED]' message to the console.
+            #    - Logs the final '[COMPLETED]' status to the file.
+
+            # Log captured output at DEBUG level. This must be inside the 'with'
+            # block to ensure it happens before the return, but after TUI status is resolved.
             self.logger.debug(f"Command '{description}' successfully completed. Output details:")
             if stdout:
                 self.logger.debug(f"  Stdout:\n{stdout.strip()}")
@@ -241,13 +317,6 @@ class Executor:
 
             return exit_code, stdout, stderr
 
-        except ShellCommandError as e:
-            # Failure Path: execution_step handles TUI printing and file logging (exception).
-            # We only re-raise the specific, enhanced exception.
-            self.logger.error(f"Execution failed for '{description}'. Reason: {e.args[0]}")
-            raise e
-
-        except Exception as e:
-            # Catch unexpected errors. execution_step's internal handler will log and print TUI traceback.
-            self.logger.critical(f"An unexpected error occurred during run() for '{description}': {e}", exc_info=True)
-            raise
+        # NOTE: If an exception is raised inside the 'with' block, the logger.execution_step
+        #       catches it, prints the '✘ [CRITICAL]' message, logs, and re-raises the exception.
+        #       We do not need the outer try/except block.

@@ -27,7 +27,9 @@ class InvalidCommandError(ShellCommandError):
     def __init__(self, command: str, message: str = "Invalid command format"):
         super().__init__(command, -1, "", "", message)
 
+
 class PermissionDeniedError(ShellCommandError):
     """Exception raised when a shell command encounters a permission denied error."""
+
     def __init__(self, command: str, stdout: str, stderr: str):
-        super().__init__(command, 126, stdout, stderr, "Permission denied") # 126 is common exit code for permission denied
+        super().__init__(command, 126, stdout, stderr, "Permission denied")  # 126 is common exit code for permission denied
