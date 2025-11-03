@@ -295,13 +295,12 @@ function check_required_tools() {
         "pacstrap"         # Install packages to new root
         "genfstab"         # Generate fstab
         "arch-chroot"      # Chroot into new installation
-        "fdisk"           # Disk partitioning
-        "mkfs.fat"        # FAT filesystem (EFI)
-        "mkswap"          # Swap creation
-        "cryptsetup"      # LUKS encryption
-        "curl"            # Download tools
-        "wget"            # Alternative download
-        "timedatectl"     # Time synchronization
+        "fdisk"            # Disk partitioning
+        "mkfs.fat"         # FAT filesystem (EFI)
+        "mkswap"           # Swap creation
+        "cryptsetup"       # LUKS encryption
+        "curl"             # Download tools
+        "timedatectl"      # Time synchronization
     )
 
     # Add filesystem-specific tools based on ROOT_FS_TYPE
@@ -1077,7 +1076,7 @@ function device_reset() {
     # Wipe partition table and inform the operating system
     run "wipefs -af $TARGET_DISK"
     run "sgdisk --zap-all --clear $TARGET_DISK"
-    run "partprobe $disk"
+    run "partprobe ${TARGET_DISK}"
 
     ### Zero the target drive
     # display_info "Zero the target drive"
@@ -1103,7 +1102,7 @@ function device_partitions_create() {
     # - Partition 2 - encrypted partition (LUKS) - remaining storage, code 8309
     run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI $TARGET_DISK"
     run "sgdisk -n 0:0:0 -t 0:8309 -c 0:LUKS $TARGET_DISK"
-    run "partprobe $TARGET_DISK"
+    run "partprobe ${TARGET_DISK}"
 }
 
 ### = device_encrypt_root - Encrypt root partition
@@ -1335,18 +1334,6 @@ function install_services() {
     run "arch-chroot ${MOUNT_POINT} bootctl install --esp-path=/efi"
 }
 
-## Cleanup
-# Various cleanup functions that are called after an error, or after finalizing the installation.
-
-### = cleanup_luks: Close encrypted partitions
-function cleanup_luks() {
-    run "cryptsetup luksClose -q ${LUKS_NAME}"
-}
-
-### = cleanup_mounts: Unmount partitions and sub volumes
-function cleanup_mounts() {
-    run "umount -R -q /tmp"
-}
 
 ## Main
 main() {
@@ -1372,13 +1359,15 @@ main() {
     install_linux_base
     install_firstboot
     install_user
-    install_ki
+    install_uki
     install_services
 
     # cleanup_all
 }
 
 # Only run main if script is executed directly
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    main "$@"
-fi
+# if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+#     main "$@"
+# fi
+
+run "sleep 15"
