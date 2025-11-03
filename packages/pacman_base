@@ -1,0 +1,15 @@
+# Base Packages
+# Package Name  Required Description
+base            # ✅     Base system packages
+base-devel      # ✅     Base development tools
+linux           # ✅     Linux kernel
+linux-firmware  # ✅     Linux firmware
+btrfs-progs     # ✅     Btrfs support
+util-linux      # ✅     Linux utilities, essential for system operation
+cryptsetup      # ✅     Encryption/decryption tools used later
+dosfstools      # ✅     FAT filesystem tools (e.g., mkfs.fat)
+sbctl           # ✅     Secure Boot tool used later
+mg              # ✅     Text editor (install at least one of your choice)
+networkmanager  # ✅     Network manager; recommended for desktop environments
+sudo            # ✅     Privilege escalation tool; essential to avoid system reinstall
+git             # ✅     Git version control, frequently used
