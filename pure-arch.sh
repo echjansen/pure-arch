@@ -77,8 +77,8 @@ function cleanup_all() {
         display_warning "Installation failed with exit code $exit_code. Cleaning up..."
 
         # Cleanup operations
-        cleanup_luks
-        cleanup_mounts
+        run "cryptsetup luksClose -q ${LUKS_NAME}"
+        run "umount -R -q ${MOUNT_POINT}"
 
         display_critical "Installation aborted. Check logs for details."
     fi
