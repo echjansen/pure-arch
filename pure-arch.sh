@@ -14,9 +14,9 @@ RESET="\033[0m"                 # Reset color
 CONFIG_FILE="config.conf"
 
 # Log files
-COMMAND_LOG=""                  # Log file for commands executed
-FEEDBACK_LOG=""                 # Log file for feedback (RUNNING, COMPLETED, FAILED)
-ERROR_LOG=""                    # Log file for errors
+COMMAND_LOG="logs/commands.log"  # Log file for commands executed
+FEEDBACK_LOG="logs/feedback.log" # Log file for feedback (RUNNING, COMPLETED, FAILED)
+ERROR_LOG="logs/error.log"       # Log file for errors
 
 # Global Variables
 readonly DEBUG=0                # 1=Debug is active
