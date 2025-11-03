@@ -122,7 +122,7 @@ function display_critical() {
 # This function is now dynamic, using either $description or $command based on $VERBOSE
 function display_running() {
     local message="$1"
-    echo -n -e "${YELLOW}[RUNNING]${RESET} $message"
+    echo -n -e "${YELLOW}[-]${RESET} $message"
     tput cub 100 # Move cursor back to the start of the line (to overwrite it)
 }
 
@@ -130,7 +130,7 @@ function display_running() {
 function display_completed() {
     local message="$1"
     # Variables are quoted when used
-    echo -e "\r${GREEN}[COMPLETED]${RESET} $message"  # Overwrite the current line
+    echo -e "\r${GREEN}[O]${RESET} $message"  # Overwrite the current line
     echo -e "[COMPLETED] $message" >> "$FEEDBACK_LOG" # Log feedback
 }
 
@@ -138,7 +138,7 @@ function display_completed() {
 function display_failed() {
     local message="$1"
     # Variables are quoted when used
-    echo -e "\r${RED}[FAILED]${RESET} $message" # Overwrite the current line
+    echo -e "\r${RED}[X]${RESET} $message" # Overwrite the current line
     echo -e "[FAILED] $message" >> "$FEEDBACK_LOG" # Log feedback
 }
 
@@ -668,23 +668,6 @@ function is_multiple_gpus() {
 
 ## Support functions
 ### = show_spinner: Spinner function with [RUNNING] in yellow
-# function show_spinner() {
-#     local pid="$1"
-#     local delay=0.1
-#     local spinstr='|/-\\'
-#     local temp
-#     local display_text="$2" # Use generic name for the text to display
-
-#     # Show spinner with '[RUNNING]' in yellow and overwrite it
-#     while [ -d "/proc/$pid" ]; do
-#         # Shift the spinner string by 1 character to get the next symbol
-#         temp=${spinstr#?}
-#         printf "\r${YELLOW}[RUNNING]${RESET} ${spinstr:0:1}  $display_text"
-#         spinstr=$temp${spinstr%"$temp"} # Rotate spinner string
-#         sleep "$delay"
-#     done
-# }
-
 show_spinner() {
     local pid="$1"
     local display_text="$2"
@@ -693,7 +676,8 @@ show_spinner() {
 
     while kill -0 "$pid" 2>/dev/null; do  # Better process checking
         for i in $(seq 0 3); do
-            printf "\r${YELLOW}[RUNNING]${RESET} ${spinstr:i:1} $display_text"
+            # printf "\r${YELLOW}[RUNNING]${RESET} ${spinstr:i:1} $display_text"
+            printf "\r${YELLOW}[${spinstr:i:1}]${RESET} $display_text"
             sleep "$delay"
             kill -0 "$pid" 2>/dev/null || break 2
         done
