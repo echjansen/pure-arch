@@ -1076,6 +1076,107 @@ function run() {
     fi
 }
 
+### = run_chroot: run a command in the target system
+function run_chroot() {
+    # 1. Function Setup and Variable Declaration
+    local command="$1"      # The shell command to run *inside* the chroot
+    local pipe_input="$2"   # The string to be piped into the command (can be empty)
+    local pid
+    local status=0
+
+    # Sanity check for chroot directory
+    if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
+        display_critical "CHROOT_DIR is not set or not a valid directory. Cannot run arch-chroot."
+        exit EXIT_SETUP_ERROR
+    fi
+
+    # 2. Command Construction for Execution
+    # The actual command to be executed on the *host* system, which wraps the user's command
+    local full_host_command="arch-chroot $MOUNT_POINT $command"
+
+    # If pipe input is provided, prepend it to the full command string using 'echo' and ' | '
+    if [ -n "$pipe_input" ]; then
+        # IMPORTANT: Use 'printf' to avoid issues with potential shell expansions in 'echo -n'
+        # The complete command to be evaluated will look like:
+        # printf 'pipe_input' | arch-chroot /mnt 'chpasswd ...'
+        full_host_command="printf '%s' \"$pipe_input\" | $full_host_command"
+    fi
+
+    # 3. Security Enhancement & Display Setup (Same as 'run')
+    # Sanitize the command string for display and non-error logging
+    # Note: This sanitizes the *pipe_input* if it contains the echo pattern, which is correct
+    local sanitized_command
+    sanitized_command=$(
+        echo "$full_host_command" | sed -E "s/(echo -[a-z]*|[pP]rintf[[:space:]]+)(\"[^\"]+\"|'[^']+')/\1[SECRET]/g"
+    )
+    # Adjusted regex to also catch 'printf '...'' and simplify the capture groups
+    # Note: If pipe_input is a secret, it will be the argument to 'printf', and this needs sanitation.
+    # We use a placeholder 'printf[[:space:]]+' to catch the start of the piped secret.
+
+    # Use the sanitized version for display and feedback logging
+    local display_text="$sanitized_command"
+
+    # Create a unique temporary file path for output capture.
+    local temp_output
+    temp_output=$(mktemp)
+
+    # 4. Log Command to COMMAND_LOG (Start of command execution record)
+    echo "$sanitized_command" >> "$COMMAND_LOG"
+
+    # 5. Display Running Status (uses sanitized text)
+    display_running "$display_text"
+
+    # 6. Execute Command in Background, when not in dry run
+    if [ "$DRYRUN" -eq 0 ]; then
+        # Use eval to robustly execute the full_host_command (which may contain a pipe)
+        # Send all stdout/stderr (2>&1) to the temporary file for capture.
+        eval "$full_host_command" > "$temp_output" 2>&1 &
+        pid=$!
+
+        # 7. Show Spinner and Wait for Completion
+        show_spinner "$pid" "$display_text"
+
+        # Wait for the background process and capture its exit status
+        wait "$pid"
+        status=$?
+    fi
+
+    # 8. Process Logs (ERROR_LOG - The Master Log)
+    echo "--- START: $display_text (PID: $pid, Status: $status) ---" >> "$ERROR_LOG"
+    cat "$temp_output" >> "$ERROR_LOG"
+    # echo "--- END: $display_text ---" >> "$ERROR_LOG"
+
+    # 9. Conditional TTY Output (VERBOSE=1)
+    if [ "$VERBOSE" -eq 1 ]; then
+        if [ -s "$temp_output" ]; then
+            echo -e "\n[ Chroot Command Output Start ]"
+            cat "$temp_output"
+            echo -e "[ Chroot Command Output End ]\n"
+        fi
+    fi
+
+    # 10. Check Status and Exit on Failure
+    if [ "$status" -eq 0 ]; then
+        # Success path
+        display_completed "$display_text"
+        rm -f "$temp_output"
+    else
+        # Failure path: Log error details, display critical message, and exit.
+
+        # Append error output/status to COMMAND_LOG
+        echo "Chroot Command FAILED (Exit Code: $status). Error output captured below:" >> "$COMMAND_LOG"
+        cat "$temp_output" >> "$COMMAND_LOG"
+
+        # Display failure status (uses sanitized text)
+        display_failed "$display_text"
+        display_critical "Chroot command failed for: $display_text (Exit Code $status). See $ERROR_LOG for full output and $COMMAND_LOG for errors."
+
+        # Cleanup temp file and exit the script
+        rm -f "$temp_output"
+        exit EXIT_COMMAND_ERROR
+    fi
+}
+
 ## Setup script logic
 ### - parse_arguments: Set variables depending on arguments passed
 parse_arguments() {
