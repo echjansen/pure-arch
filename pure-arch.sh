@@ -1348,8 +1348,8 @@ function install_firstboot() {
     run "echo -n '--root-password-hashed=${ROOT_PASS_HASHED} ' >> FIRSTBOOT"
 
     # Setup the new Arch Linux system
-    # Pass the arguments to systemd-firstboot
-    run "sudo xargs -a FIRSTBOOT systemd-firstboot"
+    # Pass the arguments to systemd-firstboot as piping does not work
+    run "xargs -a FIRSTBOOT systemd-firstboot"
 
     # Cleanup
     if [ -z "${DEBUG}" ]; then
