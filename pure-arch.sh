@@ -1472,11 +1472,15 @@ function install_user() {
     # run "arch-chroot ${MOUNT_POINT} /bin/bash -c \"echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e\""
 
     # Creating the password without run - to bypass any issues on piping
-    echo -n '${USER_NAME}:${USER_PASS_HASHED}' | arch-chroot ${MOUNT_POINT} chpasswd -e
+    echo -n "${USER_NAME}:${USER_PASS_HASHED}" | arch-chroot ${MOUNT_POINT} chpasswd -e
 
     # 1. Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m bob"
-    echo -n 'bob:123' | arch-chroot ${MOUNT_POINT} chpasswd
+    echo -n "bob:123" | arch-chroot ${MOUNT_POINT} chpasswd
+
+    # 1. Create the user, with root privileges and home directory
+    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m donald"
+    run "echo -n 'donald:123' | arch-chroot ${MOUNT_POINT} chpasswd"
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
