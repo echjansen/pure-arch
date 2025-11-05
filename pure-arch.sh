@@ -19,10 +19,10 @@ FEEDBACK_LOG="logs/feedback.log" # Log file for feedback (RUNNING, COMPLETED, FA
 ERROR_LOG="logs/error.log"       # Log file for errors
 
 # Global Variables
-readonly DEBUG=0                # 1=Debug is active
-readonly VERBOSE=0              # 1=Show shell execution output
-readonly DRYRUN=0               # 1=Do net execute to shell commands
-readonly MOUNT_POINT=/mnt       # Mount point for Arch Linux installation
+DEBUG=0                         # 1=Debug is active
+VERBOSE=0                       # 1=Show shell execution output
+DRYRUN=0                        # 1=Do net execute to shell commands
+MOUNT_POINT=/mnt                # Mount point for Arch Linux installation
 
 # Hardware Detection Global Variables
 HARDWARE_CPU=""          # Intel, AMD, Unknown
