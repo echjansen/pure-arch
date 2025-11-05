@@ -1516,10 +1516,12 @@ function install_user() {
 
     local USER_NAME2=echjansen2
     # Lets try the run_chroot function
+    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME2}"
     run_chroot "chpasswd -e" "${USER_NAME2}:${USER_PASS_HASHED}"
 
     local USER_NAME3=echjansen3
     # Lets try the run_chroot function
+    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME3}"
     run_chroot "chpasswd" "${USER_NAME3}:${USER_PASSWORD}"
 
     # Allow the WHEEL group to run sudo commands, without providing password
@@ -1599,6 +1601,28 @@ function install_review() {
     display_info "The following key configuration files were created or modified."
     display_info "You may review their content before rebooting."
     display_info "==============================================================="
+
+    local SKIP_ALL_REVIEWS=false
+    read -r -p "Do you want to **review** the installation? (Y/n, or S to skip all) [Y/n/S] " initial_choice
+
+    case "$initial_choice" in
+        [nN])
+            display_info "Skipping all reviews based on your request."
+            return # Exit the function immediately
+            ;;
+        [sS])
+            display_info "Skipping all reviews based on your request."
+            return # Exit the function immediately
+            ;;
+        [yY]*|"")
+            # Continue with the individual prompts
+            display_info "Proceeding with individual file/directory reviews..."
+            ;;
+        *)
+            # Invalid choice, default to proceeding with individual prompts
+            display_info "Invalid choice. Proceeding with individual file/directory reviews..."
+            ;;
+    esac
 
     # Iterate through the list of files
     for FILE in "${INSTALL_FILES[@]}"; do
