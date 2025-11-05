@@ -49,10 +49,8 @@ KEYMAP="us"
 FONT="ter-v16b"
 HOST_NAME="archlinux"
 USER_NAME="echjansen"
-USER_PASSWORD="123"
-USER_PASS_HASHED="$y$j9T$7jSQOifSY6zRPzqaDvTGO0$EtRzM1HXvVmvEV3q.dsKXMe.klpz1DjmvKV3V7ec8kC"
-LUKS_PASSWORD="123"
-ROOT_PASS_HASHED="$y$j9T$s8rcddKkTzTrBmA7NaGHb0$gM97r9vc.6f5RYyh0InCluiL2vT2.r6ejLv4/CqAmN5"
+USER_PASSWORD=""
+LUKS_PASSWORD=""
 USER_SHELL="/bin/bash"
 BOOTLOADER="systemd-boot"
 BASE_PACKAGES=("base" "linux" "linux-firmware")
@@ -742,9 +740,6 @@ function load_config() {
             exit EXIT_CONFIG_ERROR
         fi
     fi
-
-    # Validate required variables
-    validate_config
 }
 
 ### = validate_required_variables: - Validate required variables exist and correct value
@@ -977,13 +972,12 @@ get_password() {
         elif [ "$pass1" != "$pass2" ]; then
             display_critical "Passwords do not match. Please try again."
         else
-            display_success "${account_type} password successfully set."
             # Return the password by echoing it to stdout
             echo "$pass1"
             return 0 # Success
         fi
 
-        # We only return 1 if the user hits Ctrl+C or a critical error occurs,
+        # Only return 1 if the user hits Ctrl+C or a critical error occurs,
         # otherwise the loop handles retries.
     done
     return 1 # Should only be reached if loop is broken unexpectedly
@@ -1208,8 +1202,8 @@ function run_chroot() {
 }
 
 ## Setup script logic
-### - parse_arguments: Set variables depending on arguments passed
-parse_arguments() {
+### = parse_arguments: Set variables depending on arguments passed
+function parse_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -c|--config)        # Load variables from external config file
@@ -1237,11 +1231,11 @@ parse_arguments() {
 }
 
 
-### Get the passwords for user and LUKS
+### = get_user_info: Get the passwords for user and LUKS
 function get_user_info() {
     display_info "Please provide passwords for the main user and luks vault"
-    # USER_PASSWORD=$(get_password "$USER_NAME" "Enter password") || exit 1
-    # LUKS_PASSWORD=$(get_password "Luks" "Enter password") || exit 1
+    USER_PASSWORD=$(get_password "$USER_NAME" "Enter password") || exit 1
+    LUKS_PASSWORD=$(get_password "Luks" "Enter password") || exit 1
 }
 
 ## Device and Partition functions
@@ -1494,41 +1488,8 @@ function install_firstboot() {
 ### = install_user: Configure main user
 function install_user() {
 
-    # User passwords hashes are encrypted with yescrypt $y$....
-    # Install the 'whois' package
-    # mkpasswd -m yescrypt "abc"
-
-    # 1. Create the user, with root privileges and home directory
-    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
-
-    # 2. Change the main user password using a hashed password
-    # Use /bin/bash -c to execute the pipeline entirely inside the chroot.
-    # run "arch-chroot ${MOUNT_POINT} /bin/bash -c \"echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e\""
-
-    # # Creating the password without run - to bypass any issues on piping
-    # echo -n "${USER_NAME}:${USER_PASS_HASHED}" | arch-chroot ${MOUNT_POINT} chpasswd -e
-
-    # # 1. Create the user, with root privileges and home directory
-    # run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m bob"
-    # echo -n "bob:123" | arch-chroot ${MOUNT_POINT} chpasswd
-
-    # Works: Create the user, with root privileges and home directory
-    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m donald"
-    run "echo -n 'donald:123' | arch-chroot ${MOUNT_POINT} chpasswd"
-
-    local USER_NAME2=echjansen2
-    # Doesn't work: Lets try the run_chroot function
-    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME2}"
-    run_chroot "chpasswd -e" "${USER_NAME2}:${USER_PASS_HASHED}"
-
-    local USER_NAME3=echjansen3
-    # Works: Lets try the run_chroot function
-    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME3}"
-    run_chroot "chpasswd" "${USER_NAME3}:${USER_PASSWORD}"
-
-    local USER_NAME4=echjansen4
-    # Works: Lets try the run_chroot function
-    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME4} -p '${USER_PASS_HASHED}'"
+    # Add user account, set users password and default shell
+    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME} -p '${USER_PASSWORD}'"
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
@@ -1542,7 +1503,6 @@ function install_uki() {
 
     # Set the kernel commands line
     run "echo -n 'quiet rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
-    # run "echo -n 'rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
 
     # Because we are using sub volumes, to root has changed from default / to @
     # Tell that the root is the @ btrfs sub-volume
@@ -1608,16 +1568,11 @@ function install_review() {
     display_info "You may review their content before rebooting."
     display_info "==============================================================="
 
-    local SKIP_ALL_REVIEWS=false
-    read -r -p "Do you want to **review** the installation? (Y/n, or S to skip all) [Y/n/S] " initial_choice
+    read -r -p "Do you want to **review** the installation?  [Y/N] " initial_choice
 
     case "$initial_choice" in
         [nN])
-            display_info "Skipping all reviews based on your request."
-            return # Exit the function immediately
-            ;;
-        [sS])
-            display_info "Skipping all reviews based on your request."
+            display_info "Skipping all reviews"
             return # Exit the function immediately
             ;;
         [yY]*|"")
@@ -1625,8 +1580,8 @@ function install_review() {
             display_info "Proceeding with individual file/directory reviews..."
             ;;
         *)
-            # Invalid choice, default to proceeding with individual prompts
-            display_info "Invalid choice. Proceeding with individual file/directory reviews..."
+            display_info "Invalid choice. Skipping all reviews"
+            return # Exit the function immediately
             ;;
     esac
 
@@ -1721,6 +1676,3 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
-
-# Just mount he installed system
-# device_partitions_mount
