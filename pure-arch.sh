@@ -1368,7 +1368,14 @@ function install_user() {
 
     # 2. Change the main user password using a hashed password
     # Use /bin/bash -c to execute the pipeline entirely inside the chroot.
-    run "arch-chroot ${MOUNT_POINT} /bin/bash -c \"echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e\""
+    # run "arch-chroot ${MOUNT_POINT} /bin/bash -c \"echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e\""
+
+    # Creating the password without run - to bypass any issues on piping
+    echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e
+
+    # 1. Create the user, with root privileges and home directory
+    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m bob"
+    echo 'bob:123' | arch-chroot ${MOUNT_POINT} chpasswd
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
