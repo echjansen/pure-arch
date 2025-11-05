@@ -1503,12 +1503,12 @@ function install_user() {
     # Use /bin/bash -c to execute the pipeline entirely inside the chroot.
     # run "arch-chroot ${MOUNT_POINT} /bin/bash -c \"echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e\""
 
-    # Creating the password without run - to bypass any issues on piping
-    echo -n "${USER_NAME}:${USER_PASS_HASHED}" | arch-chroot ${MOUNT_POINT} chpasswd -e
+    # # Creating the password without run - to bypass any issues on piping
+    # echo -n "${USER_NAME}:${USER_PASS_HASHED}" | arch-chroot ${MOUNT_POINT} chpasswd -e
 
-    # 1. Create the user, with root privileges and home directory
-    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m bob"
-    echo -n "bob:123" | arch-chroot ${MOUNT_POINT} chpasswd
+    # # 1. Create the user, with root privileges and home directory
+    # run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m bob"
+    # echo -n "bob:123" | arch-chroot ${MOUNT_POINT} chpasswd
 
     # 1. Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m donald"
