@@ -1388,8 +1388,8 @@ function install_uki() {
     run "mkdir -p ${MOUNT_POINT}/efi/EFI/Linux"
 
     # Set the kernel commands line
-    # run "echo -n 'quiet rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
-    run "echo -n 'rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
+    run "echo -n 'quiet rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
+    # run "echo -n 'rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
 
     # Because we are using sub volumes, to root has changed from default / to @
     # Tell that the root is the @ btrfs sub-volume
