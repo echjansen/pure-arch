@@ -1102,8 +1102,9 @@ function device_partitions_create() {
     # The layout is for a single SSD with a GPT partition table that contains two partitions:
     # - Partition 1 - EFI partition (ESP) - size 1024MiB, code ef00
     # - Partition 2 - encrypted partition (LUKS) - remaining storage, code 8309
+    # - Note - the Discoverable Partition Specifications mentions 8304 for root
     run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI $TARGET_DISK"
-    run "sgdisk -n 0:0:0 -t 0:8309 -c 0:LUKS $TARGET_DISK"
+    run "sgdisk -n 0:0:0 -t 0:8304 -c 0:LUKS $TARGET_DISK"
     run "partprobe ${TARGET_DISK}"
 }
 
@@ -1111,6 +1112,9 @@ function device_partitions_create() {
 function device_encrypt_root() {
 
     # Encrypt root partition with LUKS 2
+    # When systemd runs in the initial RAM disk (initrd) and detects a root partition
+    # with a recognized architecture-specific root GPT GUID that is LUKS-encrypted,
+    # it will open the volume with the name root, creating the device node at /dev/mapper/root
     run "echo -n '$LUKS_PASSWORD' | cryptsetup luksFormat --label ${LUKS_NAME} ${ROOT_PARTITION}"
     run "echo -n '$LUKS_PASSWORD' | cryptsetup luksOpen ${ROOT_PARTITION} ${LUKS_NAME}"
 }
