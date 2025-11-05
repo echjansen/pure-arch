@@ -1031,21 +1031,17 @@ function run() {
     local pid
     local status=0
 
-    # SECURITY ENHANCEMENT: Command Sanitization for Display/Logging ---
-    # Sanitize the command string for display and non-error logging.
-    # This uses sed with extended regex (-E) to replace the password argument (the quoted string)
-    # in patterns like 'echo -n '...password...' | ...' with '[SECRET]'.
-
-    # Pattern groups:
-    # 1. (echo -[a-z]*)       : Captures 'echo -n', 'echo -e', etc.
-    # 2. ([[:space:]]+)       : Captures one or more spaces.
-    # 3. (\"[^\"]+\"|'[^']+') : Captures the content inside double quotes or single quotes (the secret).
-    # Replacement: \1\2[SECRET] - Puts back Group 1, Group 2, and the placeholder.
     local sanitized_command
     sanitized_command=$(
-        echo "$command" | sed -E "s/(echo -[a-z]*)([[:space:]]+)(\"[^\"]+\"|'[^']+')/\1\2[SECRET]/g"
-    )
+        # Pattern groups (must match 'echo -...' + quoted string + ' | '):
+        # 1. (echo -[a-z]*)    : Captures 'echo -n', 'echo -e', etc.
+        # 2. ([[:space:]]+)    : Captures one or more spaces.
+        # 3. (\"[^\"]+\"|'[^']+') : Captures the quoted content (the potential secret).
+        # 4. ([[:space:]]*\|)  : Captures the pipe character, optionally preceded by space.
 
+        # Replacement: \1\2[SECRET]\4 - Puts back Group 1, Group 2, the placeholder, and the pipe.
+        echo "$command" | sed -E "s/(echo -[a-z]*)([[:space:]]+)(\"[^\"]+\"|'[^']+')([[:space:]]*\|)/\1\2[SECRET]\4/g"
+    )
     # Use the sanitized version for display and feedback logging
     local display_text="$sanitized_command"
 
@@ -1171,12 +1167,17 @@ function run_chroot() {
     # Sanitize the command string for display and non-error logging
     # Note: This sanitizes the *pipe_input* if it contains the echo pattern, which is correct
     local sanitized_command
-    sanitized_command=$(
-        echo "$full_host_command" | sed -E "s/(echo -[a-z]*|[pP]rintf[[:space:]]+)(\"[^\"]+\"|'[^']+')/\1[SECRET]/g"
-    )
+
     # Adjusted regex to also catch 'printf '...'' and simplify the capture groups
     # Note: If pipe_input is a secret, it will be the argument to 'printf', and this needs sanitation.
     # We use a placeholder 'printf[[:space:]]+' to catch the start of the piped secret.
+    sanitized_command=$(
+        # Start with the original pipe sanitation:
+        echo "$full_host_command" | \
+        sed -E "s/(echo -[a-z]*|[pP]rintf[[:space:]]+)(\"[^\"]+\"|'[^']+')/\1[SECRET]/g" | \
+        # Catches: -p 'pass', --password "pass", -p pass
+        sed -E "s/(-p|--password|passwd|chpasswd)[[:space:]]*(\"[^\"]+\"|'[^']+'|[^[:space:]]+)/\1 [SECRET]/g"
+    )
 
     # Use the sanitized version for display and feedback logging
     local display_text="$sanitized_command"
