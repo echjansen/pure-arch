@@ -70,6 +70,18 @@ readonly EXIT_DEPENDENCY_ERROR=14
 # Set up trap EARLY - before any risky operations
 trap cleanup_all ERR EXIT
 
+### = cleanup: Cleanup potential creations
+function cleanup() {
+
+    # Cleanup operations
+    run "umount --lazy /dev/mapper/${LUKS_NAME}"
+    run "cryptsetup luksClose -q ${LUKS_NAME}"
+    run "umount -R -q ${MOUNT_POINT}"
+
+    # Cleanup logs
+    run "rm -rf logs/"
+}
+
 ### = cleanup_all: Close encrypted partitions, umount, etc
 function cleanup_all() {
     local exit_code=$?
@@ -78,9 +90,6 @@ function cleanup_all() {
     if [[ $exit_code -ne 0 ]]; then
         display_warning "Installation failed with exit code $exit_code. Cleaning up..."
 
-        # Cleanup operations
-        run "cryptsetup luksClose -q ${LUKS_NAME}"
-        run "umount -R -q ${MOUNT_POINT}"
 
         display_critical "Installation aborted. Check logs for details."
     fi
@@ -89,7 +98,7 @@ function cleanup_all() {
 ## TUI Functions
 ### = display_info: display general information messages in cyan
 function display_info() {
-    echo -e "${CYAN}[INFO]${RESET} $1"
+    echo -e "${CYAN}$1${RESET}"
 }
 
 ### = display_section: display section
@@ -103,6 +112,38 @@ function display_section() {
 ### = display_line: display non-formatted line
 function display_line() {
     echo -e "$1"
+}
+
+### = display_padded: display == argument =====
+function display_padded() {
+    local TEXT="$1"
+    local TEXT_LENGTH=${#TEXT}
+    local MAX_WIDTH=80
+    local PADDING_CHAR="="
+
+    # Calculate padding needed on each side
+    # We subtract 4 for the "== " prefix and " ==" suffix
+    local PADDING_NEEDED=$(( MAX_WIDTH - TEXT_LENGTH - 4 ))
+
+    # Calculate left padding (integer division)
+    local LEFT_PADDING=$(( PADDING_NEEDED / 2 ))
+
+    # Calculate right padding (adjust for odd length difference)
+    local RIGHT_PADDING=$(( PADDING_NEEDED - LEFT_PADDING ))
+
+    # --- Construct the Output String ---
+
+    # 1. Print the left padding (repeated character string)
+    local LEFT_PAD_STRING
+    LEFT_PAD_STRING=$(printf '%*s' "$LEFT_PADDING" | tr ' ' "$PADDING_CHAR")
+
+    # 2. Print the right padding (repeated character string)
+    local RIGHT_PAD_STRING
+    RIGHT_PAD_STRING=$(printf '%*s' "$RIGHT_PADDING" | tr ' ' "$PADDING_CHAR")
+
+    # --- Print the final, 80-character line ---
+    # Format: ==[LEFT PADDING][TEXT][RIGHT PADDING]==
+    echo -e "${BOLD_YELLOW}==${LEFT_PAD_STRING} ${TEXT} ${RIGHT_PAD_STRING}==${RESET}"
 }
 
 ### = display_warning: display non-critical warnings in magenta
@@ -687,7 +728,7 @@ show_spinner() {
 }
 
 ### = load_config: Load variables from a configuration file
-load_config() {
+function load_config() {
     local config_file="$1"
     if [[ -f "$config_file" ]]; then
         # Validate config file before sourcing
@@ -1184,6 +1225,26 @@ function device_btrfs_subvolumes_mount {
     run "chattr +C ${MOUNT_POINT}/var/lib/docker"
 }
 
+### = device_partitions_mount: - Helper function to mount existing install
+function device_partitions_mount() {
+
+    # Open the root partiton (LUKS)
+    run "echo -n '$LUKS_PASSWORD' | cryptsetup luksOpen ${ROOT_PARTITION} ${LUKS_NAME}"
+
+    # Mount root and root sub-volumes
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@home -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/home"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@snapshots -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/.snapshots"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@libvirt -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/libvirt"
+    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
+
+    # Mount efi
+    run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/efi"
+}
+
 ## Linux Installation functions
 ### = install_disk: Configure disks and partitions
 function install_disk() {
@@ -1301,7 +1362,7 @@ function install_firstboot() {
 function install_user() {
 
     # Create the user, with root privileges and home directory [config]
-    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s /bin/bash -m ${USER_NAME}"
+    run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
     run "echo '${USER_NAME}:${USER_PASSWORD}' arch-chroot ${MOUNT_POINT} passwd"
 
     # Allow the WHEEL group to run sudo commands, without providing password
@@ -1315,7 +1376,12 @@ function install_uki() {
     run "mkdir -p ${MOUNT_POINT}/efi/EFI/Linux"
 
     # Set the kernel commands line
-    run "echo 'quiet rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
+    # run "echo -n 'quiet rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
+    run "echo -n 'rw' > ${MOUNT_POINT}/etc/kernel/cmdline"
+
+    # Because we are using sub volumes, to root has changed from default / to @
+    # Tell that the root is the @ btrfs sub-volume
+    run "echo -n ' rootflags=subvol=@' >> ${MOUNT_POINT}/etc/kernel/cmdline"
 
     # Copy the kernel configuration
     run "cp -f rootfs/etc/mkinitcpio.d/linux.preset ${MOUNT_POINT}/etc/mkinitcpio.d/linux.preset"
@@ -1336,10 +1402,102 @@ function install_services() {
     # Make services
     run "systemctl --root $MOUNT_POINT mask systemd-networkd"
 
-    # Install boot services
-    run "arch-chroot ${MOUNT_POINT} bootctl install --esp-path=/efi"
+    # Install systemd-boot services to /efi
+    # /usr/lib/systemd/boot/efi/systemd-bootx64.efi will be copied to
+    # - esp/EFI/systemd/systemd-bootx64.efi and
+    # - esp/EFI/BOOT/BOOTX64.EFI
+    # systemd-boot will try to locate the ESP at /efi, /boot, and /boot/efi
+    # To create the boot entry in the chroot environment, use arch-chroot -S
+    run "arch-chroot -S ${MOUNT_POINT} bootctl install"
 }
 
+### = install_review
+function install_review() {
+    # -----------------------------------------------------------
+    # Define files to review (relative to the mounted root /mnt)
+    # -----------------------------------------------------------
+    local INSTALL_FILES=(
+        # systemd-firstboot configuration outputs
+        "/etc/hostname"
+        "/etc/vconsole.conf"
+        "/etc/locale.conf"
+        "/etc/sudors"
+
+        # UKI/Boot Loader configurations (assuming common setup paths)
+        "/etc/kernel/cmdline"                     # Kernel command line
+        "/etc/mkinitcpio.conf"
+        "/etc/mkinitcpio.d/linux.preset"
+    )
+
+    local INSTALL_DIRS=(
+        # EFI/Boot directories (must exist relative to mounted root /mnt)
+        "/efi/EFI/Linux"       # Check UKI placements
+        "/efi/EFI/systemd"     # Check for systemd-boot systemd-bootx64.efi
+        "/efi/EFI/BOOT"        # Check for systemd-boot BOOTX64.EFI
+        "/efi/loader/entries"  # Check for systemd-boot boot entries
+        "/boot"                # Check for initfram and ucode
+    )
+
+    display_section "Installation Review"
+    display_info "The following key configuration files were created or modified."
+    display_info "You may review their content before rebooting."
+    display_info "==============================================================="
+
+    # Iterate through the list of files
+    for FILE in "${INSTALL_FILES[@]}"; do
+        local FULL_PATH="${MOUNT_POINT}${FILE}"
+
+        # Check if the file actually exists before asking to view it
+        if [ -f "$FULL_PATH" ]; then
+
+            # Simple prompt logic
+            read -r -p "Review content of ${FILE}? [Y/n] " choice
+
+            case "$choice" in
+                [yY]*|"")
+                    echo -e "\n${GREEN}--- Content of ${FILE} ---${NC}"
+                    # Use 'cat' for simple output, or 'less' for long files
+                    # cat "$FULL_PATH"
+                    more "$FULL_PATH"
+                    display_info "--- END ---"
+                    ;;
+                [nN]*)
+                    continue # Skip to the next file
+                    ;;
+                *)
+                    echo "Invalid choice. Skipping."
+                    ;;
+            esac
+        fi
+    done
+
+    for DIR in "${INSTALL_DIRS[@]}"; do
+        local FULL_PATH="${ROOT_DIR}${DIR}"
+
+        if [ -d "$FULL_PATH" ]; then
+            read -r -p "List contents of ${DIR}? [Y/n] " choice
+
+            case "$choice" in
+                [yY]*|"")
+                    echo -e "\n${GREEN}--- Listing contents of ${DIR} (ls -lah) ---${NC}"
+                    # Use ls -lah for human-readable sizes and full details
+                    ls -lah "$FULL_PATH"
+                    echo -e "--- End of ${DIR} Listing ---\n"
+                    ;;
+                [nN]*)
+                    continue
+                    ;;
+                *)
+                    echo "Invalid choice. Skipping."
+                    ;;
+            esac
+        else
+            echo -e "${YELLOW}Warning:${NC} Directory ${DIR} does not exist. Skipping."
+        fi
+    done
+
+    display_info "=== Review Complete ==="
+}
 
 ## Main
 main() {
@@ -1367,13 +1525,15 @@ main() {
     install_user
     install_uki
     install_services
+    install_review
 
     # cleanup_all
 }
 
 # Only run main if script is executed directly
-# if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-#     main "$@"
-# fi
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
 
-run "sleep 15"
+# Just mount he installed system
+# device_partitions_mount
