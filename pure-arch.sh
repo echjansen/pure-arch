@@ -31,12 +31,14 @@ HARDWARE_3D=""           # True, False, Limited
 HARDWARE_VIRTUAL=""      # None, VMware, VirtualBox, QEMU/KVM, Hyper-V, Xen, Parallels
 HARDWARE_DISPLAY=""      # Full display string: "CPU: Intel | GPU: NVIDIA | 3D: True | Virtual: None"
 
+# Fixed variables
+readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partitions Specifications
+
 # Default Configuration Variables
 TARGET_DISK="/dev/sdb"
-EFI_PARTITION="${TARGET_DISK}p1"
-ROOT_PARTITION="${TARGET_DISK}p2"
-SWAP_PARTITION="${TARGET_DISK}p3"
-LUKS_NAME="cryptroot"
+EFI_PARTITION="${TARGET_DISK}1"
+ROOT_PARTITION="${TARGET_DISK}2"
+SWAP_PARTITION="${TARGET_DISK}3"
 ROOT_FS_TYPE="btrfs"
 BTRFS_OPTIONS="rw,noatime,compress-force=zstd:1,space_cache=v2"
 SWAP_SIZE_MB="8192"
