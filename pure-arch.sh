@@ -1526,6 +1526,10 @@ function install_user() {
     run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME3}"
     run_chroot "chpasswd" "${USER_NAME3}:${USER_PASSWORD}"
 
+    local USER_NAME4=echjansen4
+    # Works: Lets try the run_chroot function
+    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME4} -p '${USER_PASS_HASHED}'"
+
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
 }
