@@ -50,9 +50,9 @@ FONT="ter-v16b"
 HOST_NAME="archlinux"
 USER_NAME="echjansen"
 USER_PASSWORD="123"
-USER_PASS_HASHED="$6$S9DTo9nAHrAYoXqc$Gsg7qyq1jp3Tn2D5ioSjdyr.7hQsvvEgXsAhNiucMv0J574rMUMC5HXoIBc.rJGmbpJiz2U8oIW5JA5Ii/RP41"
+USER_PASS_HASHED="$y$j9T$7jSQOifSY6zRPzqaDvTGO0$EtRzM1HXvVmvEV3q.dsKXMe.klpz1DjmvKV3V7ec8kC"
 LUKS_PASSWORD="123"
-ROOT_PASS_HASHED="$6$Cq3RVYFmfLwFSTVs$RPt0RGX6839RH1bxNzfBdkxWai..C8IqqQBH0y3ajcIex3IqtMrKtrp6/NiiQueUpTUcvfJUNNQ1V0TOWP1X21"
+ROOT_PASS_HASHED="$y$j9T$s8rcddKkTzTrBmA7NaGHb0$gM97r9vc.6f5RYyh0InCluiL2vT2.r6ejLv4/CqAmN5"
 USER_SHELL="/bin/bash"
 BOOTLOADER="systemd-boot"
 BASE_PACKAGES=("base" "linux" "linux-firmware")
@@ -1494,7 +1494,9 @@ function install_firstboot() {
 ### = install_user: Configure main user
 function install_user() {
 
-    # Note bob and donlad work
+    # User passwords hashes are encrypted with yescrypt $y$....
+    # Install the 'whois' package
+    # mkpasswd -m yescrypt "abc"
 
     # 1. Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
@@ -1510,17 +1512,17 @@ function install_user() {
     # run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m bob"
     # echo -n "bob:123" | arch-chroot ${MOUNT_POINT} chpasswd
 
-    # 1. Create the user, with root privileges and home directory
+    # Works: Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m donald"
     run "echo -n 'donald:123' | arch-chroot ${MOUNT_POINT} chpasswd"
 
     local USER_NAME2=echjansen2
-    # Lets try the run_chroot function
+    # Doesn't work: Lets try the run_chroot function
     run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME2}"
     run_chroot "chpasswd -e" "${USER_NAME2}:${USER_PASS_HASHED}"
 
     local USER_NAME3=echjansen3
-    # Lets try the run_chroot function
+    # Works: Lets try the run_chroot function
     run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME3}"
     run_chroot "chpasswd" "${USER_NAME3}:${USER_PASSWORD}"
 
