@@ -1,0 +1,4 @@
+# User Common Packages
+# Package Name  Required Description
+mg              # ✅     Text editor (install at least one of your choice)
+git             # ✅     Git version control, frequently used

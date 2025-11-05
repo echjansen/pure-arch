@@ -25,11 +25,10 @@ DRYRUN=0                        # 1=Do net execute to shell commands
 MOUNT_POINT=/mnt                # Mount point for Arch Linux installation
 
 # Hardware Detection Global Variables
-HARDWARE_CPU=""          # Intel, AMD, Unknown
-HARDWARE_GPU=""          # Intel, AMD, NVIDIA, Basic, None, Intel+NVIDIA, AMD+NVIDIA, etc.
-HARDWARE_3D=""           # True, False, Limited
-HARDWARE_VIRTUAL=""      # None, VMware, VirtualBox, QEMU/KVM, Hyper-V, Xen, Parallels
-HARDWARE_DISPLAY=""      # Full display string: "CPU: Intel | GPU: NVIDIA | 3D: True | Virtual: None"
+HARDWARE_CPU=""                 # Intel, AMD, Unknown
+HARDWARE_GPU=""                 # Intel, AMD, NVIDIA, Basic, None, Intel+NVIDIA, AMD+NVIDIA, etc.
+HARDWARE_3D=""                  # True, False, Limited
+HARDWARE_VIRTUAL=""             # None, VMware, VirtualBox, QEMU/KVM, Hyper-V, Xen, Parallels
 
 # Fixed variables
 readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partitions Specifications
@@ -53,8 +52,9 @@ USER_PASSWORD=""
 LUKS_PASSWORD=""
 USER_SHELL="/bin/bash"
 BOOTLOADER="systemd-boot"
-BASE_PACKAGES=("base" "linux" "linux-firmware")
-COMMON_PACKAGES=("sudo" "git" "mg" "intel-ucode")
+PACKAGES_BASE=()
+PACKAGES_COMMON=()
+PACKAGES_HARDWARE=()
 
 # Exit codes
 readonly EXIT_SUCCESS=0
@@ -669,12 +669,6 @@ function detect_hardware() {
         done
     } > PACKAGES_HARDWARE
 
-    # if [[ ${#packages_hardware[@]} -gt 0 ]]; then
-    #     display_info "Hardware packages: ${packages_hardware[*]}"
-    # else
-    #     display_info "No additional hardware packages needed"
-    # fi
-
     return 0
 }
 
@@ -838,6 +832,37 @@ function display_help() {
     exit EXIT_SUCCESS
 }
 
+### = package_file_to_array: Create array from package file
+function package_file_to_array() {
+
+    local file_path="$1"
+    local packages_output=""
+
+    if [ ! -f "$file_path" ]; then
+        return 1
+    fi
+
+    # 1. grep -v '^#'    : Remove lines starting with '#' (comments)
+    # 2. grep -v '^\s*$' : Remove lines that are empty or only contain whitespace
+    # 3. awk '{print $1}': Print only the first field (the package name)
+    # 4. tr '\n' ' '     : Translate all newlines into single spaces
+    # 5. sed 's/ $//'    : Remove the trailing space left by tr
+
+    # The entire process is now done using awk for better parsing and quoting
+    packages_output=$(cat "$file_path" | \
+        grep -v '^\s*#\|^$' | \
+        awk '{print $1}' | \
+        while IFS= read -r pkg; do
+            # Wrap each package name in quotes
+            printf "\"%s\" " "$pkg"
+        done)
+
+    # Echo the final quoted string. Example: "base" "base-devel" "linux" ...
+    echo "$packages_output" | sed 's/ $//' # Remove trailing space
+
+    return 0
+}
+
 ### = display_config: Show all config variables
 display_config() {
     display_section "✅ Arch Install Configuration"
@@ -884,16 +909,32 @@ display_config() {
     display_line "  Virtual:          $HARDWARE_VIRTUAL"
     display_line ""
 
+    # --- 7. PACKAGES TO INSTALL ---
+    PACKAGES_BASE_ARRAY_STRING=$(package_file_to_array "packages/pacman_base")
+    PACKAGES_COMMON_ARRAY_STRING=$(package_file_to_array "packages/pacman_common")
+    PACKAGES_HARDWARE_ARRAY_STRING=$(package_file_to_array "PACKAGES_HARDWARE")
+
+    eval "PACKAGES_BASE=($PACKAGES_BASE_ARRAY_STRING)"
+    eval "PACKAGES_COMMON=($PACKAGES_COMMON_ARRAY_STRING)"
+    eval "PACKAGES_HARDWARE=($PACKAGES_HARDWARE_ARRAY_STRING)"
+
     # Safely list Base Packages
-    if [ ${#BASE_PACKAGES[@]} -gt 0 ]; then
-        display_line "  Base Packages:     ${BASE_PACKAGES[*]}"
+    if [ ${#PACKAGES_BASE[@]} -gt 0 ]; then
+        display_line "  Base Packages:     ${PACKAGES_BASE[*]}"
     else
         display_line "  Base Packages:     (Empty or not defined)"
     fi
 
+    # Safely list Hardware Packages
+    if [[ ${#PACKAGES_HARDWARE[@]} -gt 0 ]]; then
+        display_line "  Hardware Packages: ${PACKAGES_HARDWARE[*]}"
+    else
+        display_line "  Hardware Packages: (Empty or not found)"
+    fi
+
     # Safely list Common Packages
-    if [ ${#COMMON_PACKAGES[@]} -gt 0 ]; then
-        display_line "  Common Packages:   ${COMMON_PACKAGES[*]}"
+    if [ ${#PACKAGES_COMMON[@]} -gt 0 ]; then
+        display_line "  Common Packages:   ${PACKAGES_COMMON[*]}"
     else
         display_line "  Common Packages:   (Empty or not defined)"
     fi
@@ -1646,11 +1687,10 @@ main() {
     clear
     init_logging
     detect_hardware
-    display_config
     parse_arguments "$@"
     load_config "$CONFIG_FILE"
     validate_config
-    preflight_checks
+    display_config
 
     # Confirm before proceeding
     if [[ "$DRYRUN" -eq 0 ]]; then
@@ -1658,6 +1698,8 @@ main() {
         read -r confirm
         [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
     fi
+
+    preflight_checks
 
     # Main installation logic would go here
     get_user_info
