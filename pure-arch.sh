@@ -51,6 +51,7 @@ HOST_NAME="archlinux"
 USER_NAME="echjansen"
 USER_PASSWORD="123"
 LUKS_PASSWORD="123"
+ROOT_PASS_HASHED="$6$Cq3RVYFmfLwFSTVs$RPt0RGX6839RH1bxNzfBdkxWai..C8IqqQBH0y3ajcIex3IqtMrKtrp6/NiiQueUpTUcvfJUNNQ1V0TOWP1X21"
 USER_SHELL="/bin/bash"
 BOOTLOADER="systemd-boot"
 BASE_PACKAGES=("base" "linux" "linux-firmware")
@@ -1343,7 +1344,8 @@ function install_firstboot() {
     run "echo -n '--locale=${SYSTEM_LOCALE} ' >> FIRSTBOOT"
     run "echo -n '--keymap=${KEYMAP} ' >> FIRSTBOOT"
     run "echo -n '--timezone=${TIME_ZONE} ' >> FIRSTBOOT"
-    run "echo -n '--hostname=${HOST_NAME} '>> FIRSTBOOT"
+    run "echo -n '--hostname=${HOST_NAME} ' >> FIRSTBOOT"
+    run "echo -n '--root-password-hashed=${ROOT_PASS_HASHED} ' >> FIRSTBOOT"
 
     # Setup the new Arch Linux system
     # Pass the arguments to systemd-firstboot
