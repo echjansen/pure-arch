@@ -1482,7 +1482,7 @@ function install_firstboot() {
     fi
 
     # Generate the local file
-    run "arch-chroot ${MOUNT_POINT} locale-gen"
+    run_chroot "locale-gen"
 }
 
 ### = install_user: Configure main user
@@ -1515,7 +1515,7 @@ function install_uki() {
     run "cp -f rootfs/etc/mkinitcpio.conf ${MOUNT_POINT}/etc/mkinitcpio.conf"
 
     # Generate kernel images
-    run "arch-chroot ${MOUNT_POINT} mkinitcpio -P"
+    run_chroot "mkinitcpio -P"
 }
 
 ### = install_services: Configure services
@@ -1533,7 +1533,7 @@ function install_services() {
     # - esp/EFI/BOOT/BOOTX64.EFI
     # systemd-boot will try to locate the ESP at /efi, /boot, and /boot/efi
     # To create the boot entry in the chroot environment, use arch-chroot -S
-    run "arch-chroot -S ${MOUNT_POINT} bootctl install"
+    run_chroot "bootctl install"
 }
 
 ### = install_review
