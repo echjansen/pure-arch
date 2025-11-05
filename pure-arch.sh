@@ -22,7 +22,7 @@ ERROR_LOG="logs/error.log"       # Log file for errors
 DEBUG=0                         # 1=Debug is active
 VERBOSE=0                       # 1=Show shell execution output
 DRYRUN=0                        # 1=Do net execute to shell commands
-MOUNT_POINT=/mnt                # Mount point for Arch Linux installation
+MOUNT_POINT="/mnt"              # Mount point for Arch Linux installation
 
 # Hardware Detection Global Variables
 HARDWARE_CPU=""                 # Intel, AMD, Unknown
@@ -35,9 +35,9 @@ readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partiti
 
 # Default Configuration Variables
 TARGET_DISK="/dev/sdb"
-EFI_PARTITION="${TARGET_DISK}1"
-ROOT_PARTITION="${TARGET_DISK}2"
-SWAP_PARTITION="${TARGET_DISK}3"
+EFI_PARTITION=""                # Variable validation will set
+ROOT_PARTITION=""               # Variable validation will set
+HOME_PARTITION=""               # Variable validation will set
 ROOT_FS_TYPE="btrfs"
 BTRFS_OPTIONS="rw,noatime,compress-force=zstd:1,space_cache=v2"
 SWAP_SIZE_MB="8192"
@@ -787,9 +787,11 @@ validate_disk_variables() {
     if [[ "$TARGET_DISK" =~ nvme ]]; then
         EFI_PARTITION="${TARGET_DISK}p1"
         ROOT_PARTITION="${TARGET_DISK}p2"
+        HOME_PARTITION="${TARGET_DISK}p3"
     else
         EFI_PARTITION="${TARGET_DISK}1"
         ROOT_PARTITION="${TARGET_DISK}2"
+        HOME_PARTITION="${TARGET_DISK}3"
     fi
 }
 
@@ -871,8 +873,8 @@ display_config() {
     display_line "### 💾 DISK CONFIGURATION ###"
     display_line "  Target Disk:       $TARGET_DISK"
     display_line "  EFI Partition:     $EFI_PARTITION"
-    display_line "  SWAP Partition:    $SWAP_PARTITION"
     display_line "  ROOT Partition:    $ROOT_PARTITION"
+    display_line "  HOME Partition:    $HOME_PARTITION"
     display_line "  Root Filesystem:   $ROOT_FS_TYPE"
     display_line "  SWAP Size:         $SWAP_SIZE_MB MB"
     display_line ""
@@ -1309,11 +1311,13 @@ function device_reset() {
 function device_partitions_create() {
 
     # The layout is for a single SSD with a GPT partition table that contains two partitions:
-    # - Partition 1 - EFI partition (ESP) - size 1024MiB, code ef00
-    # - Partition 2 - encrypted partition (LUKS) - remaining storage, code 8309
+    # - Partition 1 - EFI boot partition (ESP) - size 1024MiB, code ef00
+    # - Partition 2 - CRYPTROOT Encrypted partition (LUKS) - remaining storage, code 8304
+    # - Partition 3 - HOME Home partition - remaining storage, code 8302
     # - Note - the Discoverable Partition Specifications mentions 8304 for root
-    run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI $TARGET_DISK"
-    run "sgdisk -n 0:0:0 -t 0:8304 -c 0:LUKS $TARGET_DISK"
+    run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI       $TARGET_DISK"
+    run "sgdisk -n 0:0:+10GiB   -t 0:8304 -c 0:CRYPTROOT $TARGET_DISK"
+    run "sgdisk -n 0:0:0        -t 0:8302 -c 0:HOME      $TARGET_DISK"
     run "partprobe ${TARGET_DISK}"
 }
 
@@ -1324,17 +1328,20 @@ function device_encrypt_root() {
     # When systemd runs in the initial RAM disk (initrd) and detects a root partition
     # with a recognized architecture-specific root GPT GUID that is LUKS-encrypted,
     # it will open the volume with the name root, creating the device node at /dev/mapper/root
-    run "echo -n '$LUKS_PASSWORD' | cryptsetup luksFormat --label ${LUKS_NAME} ${ROOT_PARTITION}"
-    run "echo -n '$LUKS_PASSWORD' | cryptsetup luksOpen ${ROOT_PARTITION} ${LUKS_NAME}"
+    run "echo -n '$LUKS_PASSWORD' | cryptsetup luksFormat /dev/disk/by-partlabel/CRYPTROOT"
+    run "echo -n '$LUKS_PASSWORD' | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
 }
 
 ### = device_partitions_format
 function device_partitions_format() {
     # Format the EFI partition with vfat
-    run "mkfs.vfat -F32 -n EFI $EFI_PARTITION"
+    run "mkfs.fat -F 32 -n ESP /dev/disk/by-partlabel/ESP"
 
     # Format the encrypted root partition with BTRFS
-    run "mkfs.btrfs -f -L ${LUKS_NAME} /dev/mapper/${LUKS_NAME}"
+    run "mkfs.btrfs -L Root /dev/mapper/root"
+
+    # Format the Home partition. Left unencrypted as systemd-homed does that again.
+    run "mkfs.btrfs -L Home /dev/disk/by-partlabel/HOME"
 }
 
 ### = device_btrfs_subvolumes_create - Create BTRFS sub volumes
@@ -1351,14 +1358,12 @@ function device_btrfs_subvolumes_create() {
 
     # Create additional subvolumes for more fine-grained control over rolling back the system to a previous state, while preserving the current state of other directories. These subvolumes will be excluded from any root subvolume snapshots:
     # Subvolume -- Mountpoint
-    # - @home -- /home (preserve user data)
     # - @snapshots -- /.snapshots
     # - @cache -- /var/cache
     # - @libvirt -- /var/lib/libvirt (virtual machine images)
     # - @log -- /var/log (excluding log files makes troubleshooting easier after reverting /)
     # - @tmp -- /var/tmp
     # The reasoning behind not excluding the entire /var out of the root snapshot is that /var/lib/pacman database in particular should mirror the rolled back state of installed packages.
-    run "btrfs subvolume create ${MOUNT_POINT}/@home"
     run "btrfs subvolume create ${MOUNT_POINT}/@cache"
     run "btrfs subvolume create ${MOUNT_POINT}/@log"
     run "btrfs subvolume create ${MOUNT_POINT}/@tmp"
@@ -1378,7 +1383,6 @@ function device_btrfs_subvolumes_mount {
     # Compression is enabled with zstd, which saves space and can improve performance. The zstd:1 means compression level 1 (range 1-5, default 3).
     # According to Arch Wiki, level 1 improves fragmentation and reduces IO, potentially improving performance.
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@home -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/home"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
@@ -1397,11 +1401,11 @@ function device_btrfs_subvolumes_mount {
 function device_partitions_mount() {
 
     # Open the root partiton (LUKS)
-    run "echo -n '$LUKS_PASSWORD' | cryptsetup luksOpen ${ROOT_PARTITION} ${LUKS_NAME}"
+    # run "echo -n '$LUKS_PASSWORD' | cryptsetup luksOpen ${ROOT_PARTITION} ${LUKS_NAME}"
+    run "echo -n '$LUKS_PASSWORD' | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
 
-    # Mount root and root sub-volumes
+    # Mount ROOT and root sub-volumes
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@home -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/home"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
@@ -1409,8 +1413,13 @@ function device_partitions_mount() {
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@libvirt -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/libvirt"
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
 
-    # Mount efi
-    run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/efi"
+    # Mount ESP
+    # run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/efi"
+    run "mount --mkdir LABEL=ESP ${MOUNT_POINT}/efi"
+
+    # Mount HOME
+    # run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/home"
+    run "mount --mkdir LABEL=Home ${MOUNT_POINT}/home -o compress-force=zstd,noatime"
 }
 
 ## Linux Installation functions
