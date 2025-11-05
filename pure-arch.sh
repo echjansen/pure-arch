@@ -49,6 +49,7 @@ KEYMAP="us"
 FONT="ter-v16b"
 HOST_NAME="archlinux"
 USER_NAME="echjansen"
+USER_PASSWORD="123"
 USER_PASS_HASHED="$6$S9DTo9nAHrAYoXqc$Gsg7qyq1jp3Tn2D5ioSjdyr.7hQsvvEgXsAhNiucMv0J574rMUMC5HXoIBc.rJGmbpJiz2U8oIW5JA5Ii/RP41"
 LUKS_PASSWORD="123"
 ROOT_PASS_HASHED="$6$Cq3RVYFmfLwFSTVs$RPt0RGX6839RH1bxNzfBdkxWai..C8IqqQBH0y3ajcIex3IqtMrKtrp6/NiiQueUpTUcvfJUNNQ1V0TOWP1X21"
@@ -1077,6 +1078,35 @@ function run() {
 }
 
 ### = run_chroot: run a command in the target system
+#####################################################################
+# Function: run_chroot
+# Description: Executes a shell command inside the Arch-chroot environment,
+#              supporting piped input from the host system. It handles command
+#              sanitization, logging, progress display (spinner), error checking,
+#              and exits the script on command failure.
+#
+# Assumptions:
+#   - Global variable $MOUNT_POINT is set to the mount point (e.g., /mnt).
+#   - Supporting functions (display_running, show_spinner, display_completed,
+#     display_failed, display_critical) and global variables ($COMMAND_LOG,
+#     $ERROR_LOG, $DRYRUN, $VERBOSE) are defined.
+#
+# Arguments:
+#   $1 - The shell command string to be executed *inside* the chroot (e.g., 'useradd -m user').
+#   $2 - (Optional) The string content to be piped into the chroot command's stdin
+#        (e.g., a password for 'chpasswd').
+#
+# Usage Example (Changing a password):
+#   run_chroot "chpasswd" "user:newsecretpassword"
+#
+# Usage Example (Regular command):
+#   run_chroot "pacman -Syu --noconfirm" ""
+#
+# Returns:
+#   0 - Success.
+#   Exits the script with EXIT_COMMAND_ERROR on any non-zero exit status from the
+#   executed chroot command, or EXIT_SETUP_ERROR if $CHROOT_DIR is invalid.
+#####################################################################
 function run_chroot() {
     # 1. Function Setup and Variable Declaration
     local command="$1"      # The shell command to run *inside* the chroot
@@ -1085,14 +1115,14 @@ function run_chroot() {
     local status=0
 
     # Sanity check for chroot directory
-    if [ -z "$MOUNT_POINT" ] || [ ! -d "$MOUNT_POINT" ]; then
+    if [ -z "${MOUNT_POINT}" ] || [ ! -d "${MOUNT_POINT}" ]; then
         display_critical "CHROOT_DIR is not set or not a valid directory. Cannot run arch-chroot."
         exit EXIT_SETUP_ERROR
     fi
 
     # 2. Command Construction for Execution
     # The actual command to be executed on the *host* system, which wraps the user's command
-    local full_host_command="arch-chroot $MOUNT_POINT $command"
+    local full_host_command="arch-chroot ${MOUNT_POINT} $command"
 
     # If pipe input is provided, prepend it to the full command string using 'echo' and ' | '
     if [ -n "$pipe_input" ]; then
@@ -1428,7 +1458,7 @@ function install_firstboot() {
     # --keymap=KEYMAP                 ✅       Sets the console keymap (e.g., us).
     # --timezone=ZONE                 ✅       Sets the system time zone (e.g., Australia/Melbourne).
     # --hostname=NAME                 ✅       Sets the system hostname (e.g., my-arch-box).
-    # --root-password=HASH            ❌       Sets the root password using a pre-generated hash.
+    # --root-password-hash            ❌       Sets the root password using a pre-generated hash.
     # --machine-id=ID                 ❌       Sets the 128-bit hexadecimal machine ID.
     # --setup-mode=MODE               ❌       Configures system as a container, host, or appliance.
     # --image=PATH                    ❌       Sets the operating system image version identifier.
@@ -1464,6 +1494,8 @@ function install_firstboot() {
 ### = install_user: Configure main user
 function install_user() {
 
+    # Note bob and donlad work
+
     # 1. Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
 
@@ -1481,6 +1513,14 @@ function install_user() {
     # 1. Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m donald"
     run "echo -n 'donald:123' | arch-chroot ${MOUNT_POINT} chpasswd"
+
+    local USER_NAME2=echjansen2
+    # Lets try the run_chroot function
+    run_chroot "chpasswd -e" "${USER_NAME2}:${USER_PASS_HASHED}"
+
+    local USER_NAME3=echjansen3
+    # Lets try the run_chroot function
+    run_chroot "chpasswd" "${USER_NAME3}:${USER_PASSWORD}"
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
