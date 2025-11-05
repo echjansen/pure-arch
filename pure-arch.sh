@@ -49,7 +49,7 @@ KEYMAP="us"
 FONT="ter-v16b"
 HOST_NAME="archlinux"
 USER_NAME="echjansen"
-USER_PASSWORD="123"
+USER_PASS_HASHED="$6$S9DTo9nAHrAYoXqc$Gsg7qyq1jp3Tn2D5ioSjdyr.7hQsvvEgXsAhNiucMv0J574rMUMC5HXoIBc.rJGmbpJiz2U8oIW5JA5Ii/RP41"
 LUKS_PASSWORD="123"
 ROOT_PASS_HASHED="$6$Cq3RVYFmfLwFSTVs$RPt0RGX6839RH1bxNzfBdkxWai..C8IqqQBH0y3ajcIex3IqtMrKtrp6/NiiQueUpTUcvfJUNNQ1V0TOWP1X21"
 USER_SHELL="/bin/bash"
@@ -1363,9 +1363,12 @@ function install_firstboot() {
 ### = install_user: Configure main user
 function install_user() {
 
-    # Create the user, with root privileges and home directory [config]
+    # 1. Create the user, with root privileges and home directory
     run "arch-chroot ${MOUNT_POINT} useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
-    run "echo '${USER_NAME}:${USER_PASSWORD}' arch-chroot ${MOUNT_POINT} passwd"
+
+    # 2. Change the main user password using a hashed password
+    # Use /bin/bash -c to execute the pipeline entirely inside the chroot.
+    run "arch-chroot ${MOUNT_POINT} /bin/bash -c \"echo '${USER_NAME}:${USER_PASS_HASHED}' | chpasswd -e\""
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
