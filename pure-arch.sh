@@ -155,11 +155,6 @@ function display_padded() {
     echo -e "${BOLD_YELLOW}==${LEFT_PAD_STRING} ${TEXT} ${RIGHT_PAD_STRING}==${RESET}"
 }
 
-### = display_warning: display non-critical warnings in magenta
-function display_warning() {
-    echo -e "${MAGENTA}[WARNING]${RESET} $1"
-}
-
 ### = display_success: display successful completion messages in green
 function display_success() {
     echo -e "${GREEN}[SUCCESS]${RESET} $1"
@@ -184,6 +179,11 @@ function display_completed() {
     # Variables are quoted when used
     echo -e "${GREEN}[O]${RESET} $message"  # Overwrite the current line
     echo -e "[COMPLETED] $message" >> "$FEEDBACK_LOG" # Log feedback
+}
+
+### = display_warning: display non-critical warnings in magenta
+function display_warning() {
+    echo -e "${MAGENTA}[!]${RESET} $1"
 }
 
 ### = display_failed: mark a step as failed with [FAILED] in red
@@ -211,7 +211,7 @@ function check_root_privileges() {
         display_info "Please run: sudo $0"
         exit $EXIT_PERMISSION_ERROR
     fi
-    display_success "Running with root privileges"
+    display_completed "Running with root privileges"
 }
 
 ### = check_arch_iso: Check if booted from Arch ISO
@@ -225,14 +225,15 @@ function check_arch_iso() {
     if ! grep -q "archiso" /proc/cmdline 2>/dev/null; then
         display_warning "Not running from Arch ISO - proceeding anyway"
     else
-        display_success "Running from Arch ISO live environment"
+        display_completed "Running from Arch ISO live environment"
     fi
 }
 
 ### = check_ufi_mode: Check if running in UEFI mode
 function check_uefi_mode() {
     if [[ -d /sys/firmware/efi/efivars ]]; then
-        display_success "System booted in UEFI mode"
+        display_completed "System booted in UEFI mode"
+
         # Verify EFI variables are writable
         if [[ ! -w /sys/firmware/efi/efivars ]]; then
             display_warning "EFI variables directory is not writable"
@@ -261,7 +262,7 @@ function check_internet_connectivity() {
     for url in "${test_urls[@]}"; do
         if ping -c 2 -W 5 "$url" &>/dev/null; then
             connected=true
-            display_success "Internet connectivity verified via $url"
+            display_completed "Internet connectivity verified via $url"
             break
         fi
     done
@@ -303,7 +304,7 @@ function check_disk_space() {
         exit $EXIT_DISK_ERROR
     fi
 
-    display_success "Sufficient disk space available: ${disk_size_gb}GB"
+    display_completed "Sufficient disk space available: ${disk_size_gb}GB"
 }
 
 ### = check_target_disk: Check target disk exists and is accessible
@@ -337,7 +338,7 @@ function check_target_disk() {
         fi
     fi
 
-    display_success "Target disk $TARGET_DISK validated"
+    display_completed "Target disk $TARGET_DISK validated"
 }
 
 ### = check_required_tools: Check all required tools are available
@@ -382,7 +383,7 @@ function check_required_tools() {
         exit $EXIT_DEPENDENCY_ERROR
     fi
 
-    display_success "All required tools are available"
+    display_completed "All required tools are available"
 }
 
 ### = check_system_clock: Check system clock synchronization
@@ -398,7 +399,7 @@ function check_system_clock() {
 
     # Check if time is synchronized
     if timedatectl status | grep -q "System clock synchronized: yes"; then
-        display_success "System clock is synchronized"
+        display_completed "System clock is synchronized"
     else
         display_warning "System clock may not be synchronized"
         display_info "Current time: $(date)"
@@ -407,7 +408,7 @@ function check_system_clock() {
 
     # Verify timezone setting
     TIME_ZONE=$(timedatectl show -p Timezone --value)
-    display_success "Current timezone: ${TIME_ZONE}"
+    display_completed "Current timezone: ${TIME_ZONE}"
 }
 
 ### = check_memory: Check memory requirements
@@ -428,7 +429,7 @@ function check_memory() {
         display_warning "Low memory: ${available_mem_mb}MB available, ${required_mem_mb}MB recommended"
         display_info "Installation may be slow or fail with insufficient memory"
     else
-        display_success "Sufficient memory available: ${available_mem_mb}MB"
+        display_completed "Sufficient memory available: ${available_mem_mb}MB"
     fi
 }
 
@@ -445,7 +446,7 @@ function check_disk_mounted() {
             display_info "These will be unmounted during installation"
         fi
     else
-        display_success "Target disk $TARGET_DISK is not currently mounted"
+        display_completed "Target disk $TARGET_DISK is not currently mounted"
     fi
 }
 
@@ -484,7 +485,9 @@ function preflight_checks() {
     # Validate target disk exists and is accessible
     check_target_disk
 
-    display_success "All pre-flight checks passed successfully"
+    display_completed "All pre-flight checks passed successfully"
+
+    display_line ""
 }
 
 ## Hardware functions
