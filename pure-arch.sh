@@ -54,7 +54,7 @@ LUKS_PASSWORD=""
 USER_SHELL="/bin/bash"
 BOOTLOADER="systemd-boot"
 PACKAGES_BASE=()
-PACKAGES_COMMON=()
+PACKAGES_UTILS=()
 PACKAGES_HARDWARE=()
 
 # Exit codes
@@ -926,11 +926,11 @@ display_config() {
 
     # --- 7. PACKAGES TO INSTALL ---
     PACKAGES_BASE_ARRAY_STRING=$(package_file_to_array "packages/pacman_base")
-    PACKAGES_COMMON_ARRAY_STRING=$(package_file_to_array "packages/pacman_common")
+    PACKAGES_UTILS_ARRAY_STRING=$(package_file_to_array "packages/pacman_utils")
     PACKAGES_HARDWARE_ARRAY_STRING=$(package_file_to_array "PACKAGES_HARDWARE")
 
     eval "PACKAGES_BASE=($PACKAGES_BASE_ARRAY_STRING)"
-    eval "PACKAGES_COMMON=($PACKAGES_COMMON_ARRAY_STRING)"
+    eval "PACKAGES_UTILS=($PACKAGES_UTILS_ARRAY_STRING)"
     eval "PACKAGES_HARDWARE=($PACKAGES_HARDWARE_ARRAY_STRING)"
 
     # Safely list Base Packages
@@ -948,8 +948,8 @@ display_config() {
     fi
 
     # Safely list Common Packages
-    if [ ${#PACKAGES_COMMON[@]} -gt 0 ]; then
-        display_line "  Common Packages:   ${PACKAGES_COMMON[*]}"
+    if [ ${#PACKAGES_UTILS[@]} -gt 0 ]; then
+        display_line "  Common Packages:   ${PACKAGES_UTILS[*]}"
     else
         display_line "  Common Packages:   (Empty or not defined)"
     fi
