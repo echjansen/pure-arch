@@ -1172,15 +1172,32 @@ function run_chroot() {
         exit EXIT_SETUP_ERROR
     fi
 
+    # # 2. Command Construction for Execution
+    # # The actual command to be executed on the *host* system, which wraps the user's command
+    # # local full_host_command="arch-chroot ${MOUNT_POINT} $command"
+    # # Wrap the command in it's own shell in case a multi 'word' function is called
+    # local full_host_command="arch-chroot ${MOUNT_POINT} sh -c \"$command\""
+
+    # # If pipe input is provided, prepend it to the full command string using 'echo' and ' | '
+    # if [ -n "$pipe_input" ]; then
+    #     # IMPORTANT: Use 'printf' to avoid issues with potential shell expansions in 'echo -n'
+    #     # The complete command to be evaluated will look like:
+    #     # printf 'pipe_input' | arch-chroot /mnt 'chpasswd ...'
+    #     full_host_command="printf '%s' \"$pipe_input\" | $full_host_command"
+    # fi
+
     # 2. Command Construction for Execution
     # The actual command to be executed on the *host* system, which wraps the user's command
-    local full_host_command="arch-chroot ${MOUNT_POINT} $command"
+    # The user's command ($command) is now wrapped in 'sh -c '...'' for shell feature parsing inside the chroot.
+    local full_host_command="arch-chroot ${MOUNT_POINT} sh -c \"$command\""
+    # Note: Using double quotes for the external arch-chroot command and escaping internal
+    # quotes to ensure $command is passed correctly.
 
     # If pipe input is provided, prepend it to the full command string using 'echo' and ' | '
     if [ -n "$pipe_input" ]; then
         # IMPORTANT: Use 'printf' to avoid issues with potential shell expansions in 'echo -n'
         # The complete command to be evaluated will look like:
-        # printf 'pipe_input' | arch-chroot /mnt 'chpasswd ...'
+        # printf 'pipe_input' | arch-chroot /mnt sh -c 'chpasswd ...'
         full_host_command="printf '%s' \"$pipe_input\" | $full_host_command"
     fi
 
@@ -1296,7 +1313,8 @@ function parse_arguments() {
 
 ### = get_user_info: Get the passwords for user and LUKS
 function get_user_info() {
-    display_info "Please provide passwords for the main user and luks vault"
+
+    display_section "Provide security details"
     USER_PASSWORD=$(get_password "$USER_NAME" "Enter password") || exit 1
     LUKS_PASSWORD=$(get_password "Luks" "Enter password") || exit 1
 }
@@ -1566,7 +1584,7 @@ function install_user() {
 
     # Add user account, set users password and default shell
     run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
-    run_chroot "echo -n ${USER_NAME}:${USER_PASSWORD} | chpasswd"
+    run_chroot "chpasswd" "${USER_NAME}:${USER_PASSWORD}"
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
