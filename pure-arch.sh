@@ -1330,9 +1330,11 @@ function device_partitions_create() {
     # - Partition 2 - CRYPTROOT Encrypted partition (LUKS) - remaining storage, code 8304
     # - Partition 3 - HOME Home partition - remaining storage, code 8302
     # - Note - the Discoverable Partition Specifications mentions 8304 for root
-    run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI       ${TARGET_DISK}"
-    run "sgdisk -n 0:0:+10GiB   -t 0:8304 -c 0:CRYPTROOT ${TARGET_DISK}"
-    run "sgdisk -n 0:0:0        -t 0:8302 -c 0:HOME      ${TARGET_DISK}"
+    # - Note - we are setting the GPT Partition name (not the file system label)
+    #          Use sgdisk p /dev/sdx to show
+    run "sgdisk -n 1:0:+1024MiB -t 1:ef00 -c 1:EFI       ${TARGET_DISK}"
+    run "sgdisk -n 2:0:+10GiB   -t 2:8304 -c 2:CRYPTROOT ${TARGET_DISK}"
+    run "sgdisk -n 3:0:0        -t 3:8302 -c 3:HOME      ${TARGET_DISK}"
 
     # Inform the OS of the new parititons
     run "partprobe ${TARGET_DISK}"
@@ -1352,7 +1354,7 @@ function device_encrypt_root() {
 ### = device_partitions_format
 function device_partitions_format() {
     # Format the EFI partition with vfat
-    run "mkfs.fat -F 32 -n ESP /dev/disk/by-partlabel/ESP"
+    run "mkfs.fat -F 32 -n ESP /dev/disk/by-partlabel/EFI"
 
     # Format the encrypted root partition with BTRFS
     run "mkfs.btrfs -L Root /dev/mapper/root"
