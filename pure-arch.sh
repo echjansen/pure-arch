@@ -1496,7 +1496,9 @@ install_linux_base() {
     run "pacstrap -K ${MOUNT_POINT} - < LINUX_BASE"
 
     # Generate the fstab file that contains all mount points
-    run "genfstab -U ${MOUNT_POINT} >> ${MOUNT_POINT}/etc/fstab"
+    # run "genfstab -U ${MOUNT_POINT} >> ${MOUNT_POINT}/etc/fstab"
+    # Use partition UUID for source identification
+    run "genfstab -t PARTUUID ${MOUNT_POINT} >> ${MOUNT_POINT}/etc/fstab"
 
     # Clean up the created files
     run "rm -f PACKAGES_HARDWARE LINUX_BASE"
