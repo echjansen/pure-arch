@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e                          # Exit on error
 
-# Define colors
+# Terminal codes
 YELLOW="\033[1;33m"             # Yellow
 GREEN="\033[1;32m"              # Green
 RED="\033[1;31m"                # Red
@@ -9,6 +9,7 @@ CYAN="\033[1;36m"               # Cyan
 MAGENTA="\033[1;35m"            # Magenta
 BOLD_YELLOW='\033[1;33m'        # Bold Yellow
 RESET="\033[0m"                 # Reset color
+COLUMNS=$(tput cols)            # Number if columns of the terminal
 
 # Default Configuration File
 CONFIG_FILE="config.conf"
@@ -953,6 +954,7 @@ display_config() {
         display_line "  Common Packages:   (Empty or not defined)"
     fi
 
+    echo ""
     input_info "Continue with this configuration? [y/N]: "
     read -r confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
