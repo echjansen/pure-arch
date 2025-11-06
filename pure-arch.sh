@@ -22,16 +22,16 @@ ERROR_LOG="logs/error.log"       # Log file for errors
 DEBUG=0                         # 1=Debug is active
 VERBOSE=0                       # 1=Show shell execution output
 DRYRUN=0                        # 1=Do net execute to shell commands
-MOUNT_POINT="/mnt"              # Mount point for Arch Linux installation
+
+# Global constants
+readonly MOUNT_POINT="/mnt"     # Mount point for Arch Linux installation
+readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partitions Specifications
 
 # Hardware Detection Global Variables
 HARDWARE_CPU=""                 # Intel, AMD, Unknown
 HARDWARE_GPU=""                 # Intel, AMD, NVIDIA, Basic, None, Intel+NVIDIA, AMD+NVIDIA, etc.
 HARDWARE_3D=""                  # True, False, Limited
 HARDWARE_VIRTUAL=""             # None, VMware, VirtualBox, QEMU/KVM, Hyper-V, Xen, Parallels
-
-# Fixed variables
-readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partitions Specifications
 
 # Default Configuration Variables
 TARGET_DISK="/dev/sdb"
@@ -68,7 +68,29 @@ readonly EXIT_DEPENDENCY_ERROR=14
 
 ## Error trapping and clean-up
 # Set up trap EARLY - before any risky operations
-trap cleanup_all ERR EXIT
+trap cleanup_error ERR EXIT
+
+### = cleanup_error: Close encrypted partitions, umount, etc
+function cleanup_error() {
+    local exit_code=$?
+
+    # Only run cleanup if there was an actual error (from 'run' calling exit)
+    if [[ $exit_code -ne 0 ]]; then
+        display_critical "Installation failed with exit code $exit_code. Cleaning up..."
+
+        # Print last lines from error log
+        if [[ -n "$ERROR_LOG" ]]; then
+            echo ""
+            display_info "--- [ ERROR LOG PREVIEW ] ---"
+            tail -n 10 "$ERROR_LOG"
+            display_info "--- [ END LOG PREVIEW ] ---"
+            echo ""
+            echo "Check $ERROR_LOG for full details."
+        fi
+
+        display_line "Installation aborted. Check logs for details."
+    fi
+}
 
 ### = cleanup: Cleanup potential creations
 function cleanup() {
@@ -82,23 +104,10 @@ function cleanup() {
     run "rm -rf logs/"
 }
 
-### = cleanup_all: Close encrypted partitions, umount, etc
-function cleanup_all() {
-    local exit_code=$?
-
-    # Only run cleanup if there was an actual error
-    if [[ $exit_code -ne 0 ]]; then
-        display_warning "Installation failed with exit code $exit_code. Cleaning up..."
-
-
-        display_critical "Installation aborted. Check logs for details."
-    fi
-}
-
 ## TUI Functions
 ### = display_info: display general information messages in cyan
 function display_info() {
-    echo -e "${CYAN}$1${RESET}"
+    echo -e "${YELLOW}$1${RESET}"
 }
 
 ### = display_section: display section
@@ -173,7 +182,7 @@ function display_running() {
 function display_completed() {
     local message="$1"
     # Variables are quoted when used
-    echo -e "\r${GREEN}[O]${RESET} $message"  # Overwrite the current line
+    echo -e "${GREEN}[O]${RESET} $message"  # Overwrite the current line
     echo -e "[COMPLETED] $message" >> "$FEEDBACK_LOG" # Log feedback
 }
 
@@ -181,7 +190,7 @@ function display_completed() {
 function display_failed() {
     local message="$1"
     # Variables are quoted when used
-    echo -e "\r${RED}[X]${RESET} $message" # Overwrite the current line
+    echo -e "${RED}[X]${RESET} $message" # Overwrite the current line
     echo -e "[FAILED] $message" >> "$FEEDBACK_LOG" # Log feedback
 }
 
@@ -323,7 +332,7 @@ function check_target_disk() {
             read -r confirm
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
                 display_info "Installation cancelled by user"
-                exit EXIT_SUCCESS
+                exit 0
             fi
         fi
     fi
@@ -457,12 +466,6 @@ function preflight_checks() {
     # TODO - uncheck
     #check_internet_connectivity
 
-    # Verify disk space requirements
-    check_disk_space
-
-    # Validate target disk exists and is accessible
-    check_target_disk
-
     # Validate all required tools are available
     check_required_tools
 
@@ -474,6 +477,12 @@ function preflight_checks() {
 
     # Check if target disk is mounted (safety check)
     check_disk_mounted
+
+    # Verify disk space requirements
+    check_disk_space
+
+    # Validate target disk exists and is accessible
+    check_target_disk
 
     display_success "All pre-flight checks passed successfully"
 }
@@ -940,6 +949,13 @@ display_config() {
     else
         display_line "  Common Packages:   (Empty or not defined)"
     fi
+
+    input_info "Continue with this configuration? [y/N]: "
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        display_info "Installation cancelled by user"
+        exit 0
+    fi
 }
 
 ### = display_hardware_recommendation: Hardware help
@@ -1076,7 +1092,6 @@ function run() {
     # ERROR_LOG contains all commands, command output, and errors.
     echo "--- START: $display_text (PID: $pid, Status: $status) ---" >> "$ERROR_LOG"
     cat "$temp_output" >> "$ERROR_LOG"
-    # echo "--- END: $display_text ---" >> "$ERROR_LOG"
 
     # 7. Conditional TTY Output (VERBOSE=1)
     if [ "$VERBOSE" -eq 1 ]; then
@@ -1694,6 +1709,8 @@ function install_review() {
 
 ## Main
 main() {
+
+    # Setup system and configuration
     clear
     init_logging
     detect_hardware
@@ -1702,17 +1719,14 @@ main() {
     validate_config
     display_config
 
-    # Confirm before proceeding
-    if [[ "$DRYRUN" -eq 0 ]]; then
-        input_info "Proceed with installation? [y/N]: "
-        read -r confirm
-        [[ "$confirm" =~ ^[Yy]$ ]] || exit 0
-    fi
-
+    # Check host and tarfet system
+    clear
     preflight_checks
 
     # Main installation logic would go here
     get_user_info
+
+    clear
     install_disk
     install_linux_base
     install_firstboot
