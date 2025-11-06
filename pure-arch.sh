@@ -1357,10 +1357,10 @@ function device_partitions_format() {
     run "mkfs.fat -F 32 -n ESP /dev/disk/by-partlabel/EFI"
 
     # Format the encrypted root partition with BTRFS
-    run "mkfs.btrfs -L Root /dev/mapper/root"
+    run "mkfs.btrfs -f -L Root /dev/mapper/root"
 
     # Format the Home partition. Left unencrypted as systemd-homed does that again.
-    run "mkfs.btrfs -L Home /dev/disk/by-partlabel/HOME"
+    run "mkfs.btrfs -f -L Home /dev/disk/by-partlabel/HOME"
 }
 
 ### = device_btrfs_subvolumes_create - Create BTRFS sub volumes
