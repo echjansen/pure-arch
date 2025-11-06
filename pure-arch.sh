@@ -97,7 +97,7 @@ function cleanup() {
 
     # Cleanup operations
     run "umount --lazy /dev/mapper/${LUKS_NAME}"
-    run "cryptsetup luksClose -q ${LUKS_NAME}"
+    run "cryptsetup close -q ${LUKS_NAME}"
     run "umount -R -q ${MOUNT_POINT}"
 
     # Cleanup logs
@@ -1330,9 +1330,11 @@ function device_partitions_create() {
     # - Partition 2 - CRYPTROOT Encrypted partition (LUKS) - remaining storage, code 8304
     # - Partition 3 - HOME Home partition - remaining storage, code 8302
     # - Note - the Discoverable Partition Specifications mentions 8304 for root
-    run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI       $TARGET_DISK"
-    run "sgdisk -n 0:0:+10GiB   -t 0:8304 -c 0:CRYPTROOT $TARGET_DISK"
-    run "sgdisk -n 0:0:0        -t 0:8302 -c 0:HOME      $TARGET_DISK"
+    run "sgdisk -n 0:0:+1024MiB -t 0:ef00 -c 0:EFI       ${TARGET_DISK}"
+    run "sgdisk -n 0:0:+10GiB   -t 0:8304 -c 0:CRYPTROOT ${TARGET_DISK}"
+    run "sgdisk -n 0:0:0        -t 0:8302 -c 0:HOME      ${TARGET_DISK}"
+
+    # Inform the OS of the new parititons
     run "partprobe ${TARGET_DISK}"
 }
 
@@ -1343,8 +1345,8 @@ function device_encrypt_root() {
     # When systemd runs in the initial RAM disk (initrd) and detects a root partition
     # with a recognized architecture-specific root GPT GUID that is LUKS-encrypted,
     # it will open the volume with the name root, creating the device node at /dev/mapper/root
-    run "echo -n '$LUKS_PASSWORD' | cryptsetup luksFormat /dev/disk/by-partlabel/CRYPTROOT"
-    run "echo -n '$LUKS_PASSWORD' | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
+    run "echo -n ${LUKS_PASSWORD} | cryptsetup luksFormat /dev/disk/by-partlabel/CRYPTROOT"
+    run "echo -n ${LUKS_PASSWORD} | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
 }
 
 ### = device_partitions_format
@@ -1416,7 +1418,6 @@ function device_btrfs_subvolumes_mount {
 function device_partitions_mount() {
 
     # Open the root partiton (LUKS)
-    # run "echo -n '$LUKS_PASSWORD' | cryptsetup luksOpen ${ROOT_PARTITION} ${LUKS_NAME}"
     run "echo -n '$LUKS_PASSWORD' | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
 
     # Mount ROOT and root sub-volumes
