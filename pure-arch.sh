@@ -1059,7 +1059,8 @@ function run() {
 
         # Replacement: \1\2[SECRET]\4 - Puts back Group 1, Group 2, the placeholder, and the pipe.
         echo "$command" | sed -E "s/(echo -[a-z]*)([[:space:]]+)(\"[^\"]+\"|'[^']+')([[:space:]]*\|)/\1\2[SECRET]\4/g"
-    )
+                     )
+
     # Use the sanitized version for display and feedback logging
     local display_text="$sanitized_command"
 
@@ -1561,7 +1562,8 @@ function install_firstboot() {
 function install_user() {
 
     # Add user account, set users password and default shell
-    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME} -p '${USER_PASSWORD}'"
+    run_chroot "useradd -G wheel -s ${USER_SHELL} -m ${USER_NAME}"
+    run_chroot "echo -n ${USER_NAME}:${USER_PASSWORD} | chpasswd"
 
     # Allow the WHEEL group to run sudo commands, without providing password
     run "cp -f rootfs/etc/sudoers ${MOUNT_POINT}/etc/sudoers"
