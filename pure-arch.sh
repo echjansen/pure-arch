@@ -1397,7 +1397,7 @@ function device_btrfs_subvolumes_create() {
 ### = device_btrfs_subvolumes_mount: - Mount BTRFS sub volumes
 function device_btrfs_subvolumes_mount {
 
-    # Note the -t btrfs is just to specify the filesystem type and help shell completion. The subvol option specifies which subvolume to mount.
+    # Note the -t btrfs is to specify the filesystem type and help shell completion. The subvol option specifies which subvolume to mount.
     # Also note that the mount '-m' command creates the mount point if it does not already exist (${MOUNT_POINT}/home, etc )
     # Compression is enabled with zstd, which saves space and can improve performance. The zstd:1 means compression level 1 (range 1-5, default 3).
     # According to Arch Wiki, level 1 improves fragmentation and reduces IO, potentially improving performance.
@@ -1414,6 +1414,12 @@ function device_btrfs_subvolumes_mount {
     # Also, docker, podman, and libvirt use their own image formats, and using CoW may cause performance issues.
     run "chattr +C ${MOUNT_POINT}/var/lib/libvirt"
     run "chattr +C ${MOUNT_POINT}/var/lib/docker"
+
+    # Mount EFI partition:
+    run "mount --mkdir LABEL=ESP ${MOUNT_POINT}/efi"
+
+    # Mount HOME partition
+    run "mount --mkdir LABEL=Home ${MOUNT_POINT}/home -o compress-force=zstd,noatime"
 }
 
 ### = device_partitions_mount: - Helper function to mount existing install
@@ -1432,11 +1438,9 @@ function device_partitions_mount() {
     run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
 
     # Mount ESP
-    # run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/efi"
     run "mount --mkdir LABEL=ESP ${MOUNT_POINT}/efi"
 
     # Mount HOME
-    # run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/home"
     run "mount --mkdir LABEL=Home ${MOUNT_POINT}/home -o compress-force=zstd,noatime"
 }
 
@@ -1452,9 +1456,6 @@ function install_disk() {
     device_partitions_format
     device_btrfs_subvolumes_create
     device_btrfs_subvolumes_mount
-
-    # Mount EFI partition:
-    run "mount -m ${EFI_PARTITION} ${MOUNT_POINT}/efi"
 }
 
 ### = install_linux_base: Pacstrap Arch Linux base (minimal)
