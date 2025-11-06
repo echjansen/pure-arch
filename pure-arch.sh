@@ -1619,6 +1619,7 @@ function install_review() {
         "/etc/sudors"
 
         # UKI/Boot Loader configurations (assuming common setup paths)
+        "/etc/fstab"                              # Mount points
         "/etc/kernel/cmdline"                     # Kernel command line
         "/etc/mkinitcpio.conf"
         "/etc/mkinitcpio.d/linux.preset"
