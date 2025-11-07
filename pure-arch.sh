@@ -1,23 +1,15 @@
 #!/bin/bash
 set -e                          # Exit on error
 
-# Terminal codes
-YELLOW="\033[1;33m"             # Yellow
-GREEN="\033[1;32m"              # Green
-RED="\033[1;31m"                # Red
-CYAN="\033[1;36m"               # Cyan
-MAGENTA="\033[1;35m"            # Magenta
-BOLD_YELLOW='\033[1;33m'        # Bold Yellow
-RESET="\033[0m"                 # Reset color
-COLUMNS=$(tput cols)            # Number if columns of the terminal
+# Terminal UI functions
+source lib/pure-linux-tui.sh
 
 # Default Configuration File
 CONFIG_FILE="config.conf"
 
 # Log files
-COMMAND_LOG="logs/commands.log"  # Log file for commands executed
-FEEDBACK_LOG="logs/feedback.log" # Log file for feedback (RUNNING, COMPLETED, FAILED)
-ERROR_LOG="logs/error.log"       # Log file for errors
+LOG_COMMANDS="logs/commands.log"  # Log file for commands executed
+LOG_ERRORS="logs/error.log"       # Log file for errors
 
 # Global Variables
 DEBUG=0                         # 1=Debug is active
@@ -25,7 +17,7 @@ VERBOSE=0                       # 1=Show shell execution output
 DRYRUN=0                        # 1=Do net execute to shell commands
 
 # Global constants
-readonly MOUNT_POINT="/mnt"     # Mount point for Arch Linux installation
+readonly MOUNT_POINT="/tmp"     # Mount point for Arch Linux installation
 readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partitions Specifications
 
 # Hardware Detection Global Variables
@@ -35,23 +27,27 @@ HARDWARE_3D=""                  # True, False, Limited
 HARDWARE_VIRTUAL=""             # None, VMware, VirtualBox, QEMU/KVM, Hyper-V, Xen, Parallels
 
 # Default Configuration Variables
-TARGET_DISK="/dev/sdb"
-EFI_PARTITION=""                # Variable validation will set
-ROOT_PARTITION=""               # Variable validation will set
-HOME_PARTITION=""               # Variable validation will set
-ROOT_FS_TYPE="btrfs"
-BTRFS_OPTIONS="rw,noatime,compress-force=zstd:1,space_cache=v2"
+DISK_TARGET="/dev/sdb"
+PART_EFI_PATH=""                # Variable validation will set
+PART_EFI_SIZE="1024MiB"
+PART_ROOT_PATH=""               # Variable validation will set
+PART_ROOT_SIZE="50GiB"
+PART_ROOT_FS="btrfs"
+PART_ROOT_FS_BTRFS_OPTIONS="rw,noatime,compress-force=zstd:1,space_cache=v2"
+PART_HOME_PATH=""               # Variable validation will set
 SWAP_SIZE_MB="8192"
-SYSTEM_LOCALE="en_US.UTF-8"
-SYSTEM_COUNTRY="Australia"
-TIME_ZONE="Australia/Victoria"
-KEYMAP="us"
+FB_LOCALE="en_US.UTF-8"         # Firstboot variables
+FB_COUNTRY="Australia"
+FB_TIMEZONE="Australia/Victoria"
+FB_KEYMAP="us"
 FONT="ter-v16b"
 HOST_NAME="archlinux"
 USER_NAME="echjansen"
 USER_PASSWORD=""
-LUKS_PASSWORD=""
+USER_PASS_HASHED=""
 USER_SHELL="/bin/bash"
+ROOT_PASS_HASHED=""
+LUKS_PASSWORD=""
 BOOTLOADER="systemd-boot"
 PACKAGES_BASE=()
 PACKAGES_UTILS=()
@@ -77,19 +73,17 @@ function cleanup_error() {
 
     # Only run cleanup if there was an actual error (from 'run' calling exit)
     if [[ $exit_code -ne 0 ]]; then
-        display_critical "Installation failed with exit code $exit_code. Cleaning up..."
+        tui_print_message "Installation failed with exit code $exit_code. Cleaning up..."
 
         # Print last lines from error log
-        if [[ -n "$ERROR_LOG" ]]; then
+        if [[ -n "$LOG_ERRORS" ]]; then
             echo ""
-            display_info "--- [ ERROR LOG PREVIEW ] ---"
-            tail -n 10 "$ERROR_LOG"
-            display_info "--- [ END LOG PREVIEW ] ---"
+            tui_print_title "[ ERROR LOG PREVIEW ]" "$RED"
+            tail -n 10 "$LOG_ERRORS"
+            tui_print_title "[ END LOG PREVIEW ]" "$RED"
             echo ""
-            echo "Check $ERROR_LOG for full details."
+            tui_print_message "Check $LOG_ERRORS for full details." "$YELLOW$BOLD" "-->"
         fi
-
-        display_line "Installation aborted. Check logs for details."
     fi
 }
 
@@ -106,100 +100,11 @@ function cleanup() {
 }
 
 ## TUI Functions
-### = display_info: display general information messages in cyan
-function display_info() {
-    echo -e "${YELLOW}$1${RESET}"
-}
-
-### = display_section: display section
-function display_section() {
-    echo ""
-    echo -e "${BOLD_YELLOW}========================================${RESET}"
-    echo -e "${BOLD_YELLOW} $1${RESET}"
-    echo -e "${BOLD_YELLOW}========================================${RESET}"
-}
-
-### = display_line: display non-formatted line
-function display_line() {
-    echo -e "$1"
-}
-
-### = display_padded: display == argument =====
-function display_padded() {
-    local TEXT="$1"
-    local TEXT_LENGTH=${#TEXT}
-    local MAX_WIDTH=80
-    local PADDING_CHAR="="
-
-    # Calculate padding needed on each side
-    # We subtract 4 for the "== " prefix and " ==" suffix
-    local PADDING_NEEDED=$(( MAX_WIDTH - TEXT_LENGTH - 4 ))
-
-    # Calculate left padding (integer division)
-    local LEFT_PADDING=$(( PADDING_NEEDED / 2 ))
-
-    # Calculate right padding (adjust for odd length difference)
-    local RIGHT_PADDING=$(( PADDING_NEEDED - LEFT_PADDING ))
-
-    # --- Construct the Output String ---
-
-    # 1. Print the left padding (repeated character string)
-    local LEFT_PAD_STRING
-    LEFT_PAD_STRING=$(printf '%*s' "$LEFT_PADDING" | tr ' ' "$PADDING_CHAR")
-
-    # 2. Print the right padding (repeated character string)
-    local RIGHT_PAD_STRING
-    RIGHT_PAD_STRING=$(printf '%*s' "$RIGHT_PADDING" | tr ' ' "$PADDING_CHAR")
-
-    # --- Print the final, 80-character line ---
-    # Format: ==[LEFT PADDING][TEXT][RIGHT PADDING]==
-    echo -e "${BOLD_YELLOW}==${LEFT_PAD_STRING} ${TEXT} ${RIGHT_PAD_STRING}==${RESET}"
-}
-
-### = display_success: display successful completion messages in green
-function display_success() {
-    echo -e "${GREEN}[SUCCESS]${RESET} $1"
-}
-
-### = display_critical: display critical errors and failures in red
-function display_critical() {
-    echo -e "${RED}[CRITICAL]${RESET} $1"
-}
-
-### = display_running: display the current step with [RUNNING] in yellow
-# This function is now dynamic, using either $description or $command based on $VERBOSE
-function display_running() {
-    local message="$1"
-    echo -n -e "${YELLOW}[-]${RESET} $message"
-    tput cub 100 # Move cursor back to the start of the line (to overwrite it)
-}
-
-### = display_completed: - mark a step as completed with [COMPLETED] in green
-function display_completed() {
-    local message="$1"
-    # Variables are quoted when used
-    echo -e "${GREEN}[O]${RESET} $message"  # Overwrite the current line
-    echo -e "[COMPLETED] $message" >> "$FEEDBACK_LOG" # Log feedback
-}
-
-### = display_warning: display non-critical warnings in magenta
-function display_warning() {
-    echo -e "${MAGENTA}[!]${RESET} $1"
-}
-
-### = display_failed: mark a step as failed with [FAILED] in red
-function display_failed() {
-    local message="$1"
-    # Variables are quoted when used
-    echo -e "${RED}[X]${RESET} $message" # Overwrite the current line
-    echo -e "[FAILED] $message" >> "$FEEDBACK_LOG" # Log feedback
-}
-
 ### = input_info: display messages prompting for input in bold yellow
 function input_info() {
     # The message is printed using '-n -e' to allow escape codes
     # and to keep the cursor on the same line (no automatic newline).
-    echo -n -e "${BOLD_YELLOW}[INPUT]${RESET} $1" >&2
+    echo -n -e "$BOLD$YELLOW[INPUT]${RESET} $1" >&2
 }
 
 ## Check functions
@@ -208,40 +113,39 @@ function input_info() {
 ### = check_root_priviledges: Check if running as root
 function check_root_privileges() {
     if [[ $EUID -ne 0 ]]; then
-        display_critical "This script must be run as root for Arch installation"
-        display_info "Please run: sudo $0"
+        tui_print_message "This script must be run as root for Arch installation" "$RED" "$PREFIX_FAILURE"
+        tui_print_message "Please run: sudo $0" "$YELLOW" "-->"
         exit $EXIT_PERMISSION_ERROR
     fi
-    display_completed "Running with root privileges"
+    tui_print_message "Running with root privileges" "$GREEN" "$PREFIX_SUCCESS"
 }
 
 ### = check_arch_iso: Check if booted from Arch ISO
 function check_arch_iso() {
     if [[ ! -f /etc/arch-release ]]; then
-        display_critical "Not running on Arch Linux"
+        tui_print_message "Not running on Arch Linux" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_SYSTEM_ERROR
     fi
 
     # Check if running from live environment
     if ! grep -q "archiso" /proc/cmdline 2>/dev/null; then
-        display_warning "Not running from Arch ISO - proceeding anyway"
+        tui_print_message "Not running from Arch ISO - proceeding anyway" "$YELLOW" "$PREFIX_WARNING"
     else
-        display_completed "Running from Arch ISO live environment"
+        tui_print_message "Running from Arch ISO live environment" "$GREEN" "$PREFIX_SUCCESS"
     fi
 }
 
 ### = check_ufi_mode: Check if running in UEFI mode
 function check_uefi_mode() {
     if [[ -d /sys/firmware/efi/efivars ]]; then
-        display_completed "System booted in UEFI mode"
+        tui_print_message "System booted in UEFI mode" "$GREEN" "$PREFIX_SUCCESS"
 
         # Verify EFI variables are writable
         if [[ ! -w /sys/firmware/efi/efivars ]]; then
-            display_warning "EFI variables directory is not writable"
+            tui_print_message "EFI variables directory is not writable" "YELLOW" "$PREFIX_WARNING"
         fi
     else
-        display_critical "System not booted in UEFI mode"
-        display_info "This installer requires UEFI boot mode"
+        tui_print_message "System not booted in UEFI mode" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_SYSTEM_ERROR
     fi
 }
@@ -284,62 +188,62 @@ function check_internet_connectivity() {
 function check_disk_space() {
     local required_space_gb=15  # Minimum 15GB for base installation
 
-    if [[ ! -b "$TARGET_DISK" ]]; then
-        display_warning "Target disk $TARGET_DISK not found - skipping disk space check"
+    if [[ ! -b "$DISK_TARGET" ]]; then
+        tui_print_message "Target disk $DISK_TARGET not found - skipping disk space check" "$YELLOW" "$PREFIX_WARNING"
         return 0
     fi
 
     # Get disk size in GB
     local disk_size_bytes
-    disk_size_bytes=$(lsblk -b -d -n -o SIZE "$TARGET_DISK" 2>/dev/null)
+    disk_size_bytes=$(lsblk -b -d -n -o SIZE "$DISK_TARGET" 2>/dev/null)
 
     if [[ -z "$disk_size_bytes" ]]; then
-        display_warning "Could not determine disk size for $TARGET_DISK"
+        tui_print_message "Could not determine disk size for $DISK_TARGET" "$YELLOW" "$PREFIX_WARNING"
         return 0
     fi
 
     local disk_size_gb=$((disk_size_bytes / 1024 / 1024 / 1024))
 
     if [[ $disk_size_gb -lt $required_space_gb ]]; then
-        display_critical "Insufficient disk space: ${disk_size_gb}GB available, ${required_space_gb}GB required"
+        tui_print_message "Insufficient disk space: ${disk_size_gb}GB available, ${required_space_gb}GB required" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_DISK_ERROR
     fi
 
-    display_completed "Sufficient disk space available: ${disk_size_gb}GB"
+    tui_print_message "Sufficient disk space available: ${disk_size_gb}GB" "$GREEN" "$PREFIX_SUCCESS"
 }
 
 ### = check_target_disk: Check target disk exists and is accessible
 function check_target_disk() {
-    if [[ ! -b "$TARGET_DISK" ]]; then
-        display_critical "Target disk $TARGET_DISK does not exist or is not a block device"
-        display_info "Available disks:"
+    if [[ ! -b "$DISK_TARGET" ]]; then
+        tui_print_message "Target disk $DISK_TARGET does not exist or is not a block device" "$RED" "$PREFIX_FAILURE"
+        tui_print_message "Available disks:" "$YELLOW"
         lsblk -d -o NAME,SIZE,TYPE | grep disk
         exit $EXIT_DISK_ERROR
     fi
 
     # Check if disk is writable
-    if [[ ! -w "$TARGET_DISK" ]]; then
-        display_critical "Target disk $TARGET_DISK is not writable"
+    if [[ ! -w "$DISK_TARGET" ]]; then
+        tui_print_message "Target disk $DISK_TARGET is not writable" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_DISK_ERROR
     fi
 
     # Warn if disk contains existing partitions
-    if lsblk -n "$TARGET_DISK" | grep -q part; then
-        display_warning "Target disk $TARGET_DISK contains existing partitions"
-        display_info "Existing partition layout:"
-        lsblk "$TARGET_DISK"
+    if lsblk -n "$DISK_TARGET" | grep -q part; then
+        tui_print_message "Target disk $DISK_TARGET contains existing partitions" "$YELLOW" "$PREFIX_WARNING"
+        tui_print_message "Existing partition layout:" "$YELLOW"
+        lsblk "$DISK_TARGET"
 
         if [[ "$DRYRUN" -eq 0 ]]; then
-            input_info "Continue and DESTROY all data on $TARGET_DISK? [y/N]: "
+            input_info "Continue and DESTROY all data on $DISK_TARGET? [y/N]: "
             read -r confirm
             if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-                display_info "Installation cancelled by user"
+                tui_print_message "Installation cancelled by user" "$YELLOW"
                 exit 0
             fi
         fi
     fi
 
-    display_completed "Target disk $TARGET_DISK validated"
+    tui_print_message "Target disk $DISK_TARGET validated" "$GREEN" "$PREFIX_SUCCESS"
 }
 
 ### = check_required_tools: Check all required tools are available
@@ -358,7 +262,7 @@ function check_required_tools() {
     )
 
     # Add filesystem-specific tools based on ROOT_FS_TYPE
-    case "$ROOT_FS_TYPE" in
+    case "$PART_ROOT_FS" in
         "btrfs")
             required_tools+=("mkfs.btrfs" "btrfs")
             ;;
@@ -379,12 +283,12 @@ function check_required_tools() {
     done
 
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
-        display_critical "Missing required tools: ${missing_tools[*]}"
-        display_info "Please install missing tools or boot from a complete Arch ISO"
+        tui_print_message "Missing required tools: ${missing_tools[*]}" "$RED" "$PREFIX_FAILURE"
+        tui_print_message "Please install missing tools or boot from a complete Arch ISO" "$YELLOW" "-->"
         exit $EXIT_DEPENDENCY_ERROR
     fi
 
-    display_completed "All required tools are available"
+    tui_print_message "All required tools are available" "$GREEN" "$PREFIX_SUCCESS"
 }
 
 ### = check_system_clock: Check system clock synchronization
@@ -392,7 +296,7 @@ function check_system_clock() {
 
     # Enable NTP synchronization
     if ! timedatectl set-ntp true 2>/dev/null; then
-        display_warning "Could not enable NTP synchronization"
+        tui_print_message "Could not enable NTP synchronization" "$YELLOW" "$PREFIX_WARNING"
     fi
 
     # Wait a moment for sync attempt
@@ -400,16 +304,16 @@ function check_system_clock() {
 
     # Check if time is synchronized
     if timedatectl status | grep -q "System clock synchronized: yes"; then
-        display_completed "System clock is synchronized"
+        tui_print_message "System clock is synchronized" "$GREEN" "$PREFIX_SUCCESS"
     else
-        display_warning "System clock may not be synchronized"
-        display_info "Current time: $(date)"
-        display_info "This may cause issues with package signatures"
+        tui_print_message "System clock may not be synchronized" "$YELLOW" "$PREFIX_WARNING"
+        tui_print_message "Current time: $(date)" "$YELLOW" "-->"
+        tui_print_message "This may cause issues with package signatures" "$YELLOW" "-->"
     fi
 
     # Verify timezone setting
-    TIME_ZONE=$(timedatectl show -p Timezone --value)
-    display_completed "Current timezone: ${TIME_ZONE}"
+    FB_TIMEZONE=$(timedatectl show -p Timezone --value)
+    tui_print_message "Current timezone: ${FB_TIMEZONE}" "$GREEN" "$PREFIX_SUCCESS"
 }
 
 ### = check_memory: Check memory requirements
@@ -423,37 +327,37 @@ function check_memory() {
     if [[ -z "$available_mem_mb" ]]; then
         # Fallback to total memory if available memory detection fails
         available_mem_mb=$(free -m | awk '/^Mem:/ {print $2}')
-        display_warning "Using total memory for check: ${available_mem_mb}MB"
+        tui_print_message "Using total memory for check: ${available_mem_mb}MB" "$YELLOW" "$PREFIX_WARNING"
     fi
 
     if [[ $available_mem_mb -lt $required_mem_mb ]]; then
-        display_warning "Low memory: ${available_mem_mb}MB available, ${required_mem_mb}MB recommended"
-        display_info "Installation may be slow or fail with insufficient memory"
+        tui_print_message "Low memory: ${available_mem_mb}MB available, ${required_mem_mb}MB recommended" "$YELLOW" "$PREFIX_WARNING"
+        tui_print_message "Installation may be slow or fail with insufficient memory" "$YELLOW" "-->"
     else
-        display_completed "Sufficient memory available: ${available_mem_mb}MB"
+        tui_print_message "Sufficient memory available: ${available_mem_mb}MB" "$GREEN" "$PREFIX_SUCCESS"
     fi
 }
 
 ### = check_disk_mounted: Check if target disk is currently mounted (safety check)
 function check_disk_mounted() {
     local mounted_partitions
-    mounted_partitions=$(lsblk -n -o MOUNTPOINT "$TARGET_DISK" 2>/dev/null | grep -v '^$' || true)
+    mounted_partitions=$(lsblk -n -o MOUNTPOINT "$DISK_TARGET" 2>/dev/null | grep -v '^$' || true)
 
     if [[ -n "$mounted_partitions" ]]; then
-        display_warning "Target disk $TARGET_DISK has mounted partitions:"
-        lsblk "$TARGET_DISK" | grep -E "(MOUNTPOINT|/)"
+        tui_print_message "Target disk $DISK_TARGET has mounted partitions:" "$YELLOW" "$PREFIX_WARNING"
+        lsblk "$DISK_TARGET" | grep -E "(MOUNTPOINT|/)"
 
         if [[ "$DRYRUN" -eq 0 ]]; then
-            display_info "These will be unmounted during installation"
+            tui_print_message "These will be unmounted during installation" "$YELLOW" "-->"
         fi
     else
-        display_completed "Target disk $TARGET_DISK is not currently mounted"
+        tui_print_message "Target disk $DISK_TARGET is not currently mounted" "$GREEN" "$PREFIX_SUCCESS"
     fi
 }
 
 ### = check_all: Perform all checks
 function preflight_checks() {
-    display_section "Running pre-flight checks..."
+    tui_print_section "Running pre-flight checks..."
 
     # Check if running as root (required for installation)
     check_root_privileges
@@ -486,9 +390,9 @@ function preflight_checks() {
     # Validate target disk exists and is accessible
     check_target_disk
 
-    display_completed "All pre-flight checks passed successfully"
+    tui_print_message "All pre-flight checks passed successfully" "$GREEN" "$PREFIX_SUCCESS"
 
-    display_line ""
+    echo ""
 }
 
 ## Hardware functions
@@ -669,7 +573,6 @@ function detect_hardware() {
     # === WRITE PACKAGE FILE ===
     {
         echo "# Hardware Detection Results"
-        echo "# $display_line"
         echo "# Generated: $(date)"
         echo "# CPU: $HARDWARE_CPU"
         echo "# GPU: $HARDWARE_GPU"
@@ -716,34 +619,16 @@ function is_multiple_gpus() {
 }
 
 ## Support functions
-### = show_spinner: Spinner function with [RUNNING] in yellow
-show_spinner() {
-    local pid="$1"
-    local display_text="$2"
-    local delay=0.1
-    local spinstr='|/-\'
-
-    while kill -0 "$pid" 2>/dev/null; do  # Better process checking
-        for i in $(seq 0 3); do
-            # printf "\r${YELLOW}[RUNNING]${RESET} ${spinstr:i:1} $display_text"
-            printf "\r${YELLOW}[${spinstr:i:1}]${RESET} $display_text"
-            sleep "$delay"
-            kill -0 "$pid" 2>/dev/null || break 2
-        done
-    done
-    printf "\r"  # Clear the spinner line
-}
-
 ### = load_config: Load variables from a configuration file
 function load_config() {
     local config_file="$1"
     if [[ -f "$config_file" ]]; then
         # Validate config file before sourcing
         if bash -n "$config_file"; then
-            display_info "Loading configuration from: ${config_file}"
+            tui_print_message "Loading configuration from: ${config_file}" "$GREEN" "$PREFIX_SUCCESS"
             source "$config_file"
         else
-            display_critical "Invalid configuration file syntax: $config_file"
+            tui_print_message "Invalid configuration file syntax: $config_file" "$RED" "$PREFIX_FAILURE"
             exit EXIT_CONFIG_ERROR
         fi
     fi
@@ -751,7 +636,7 @@ function load_config() {
 
 ### = validate_required_variables: - Validate required variables exist and correct value
 validate_required_variables() {
-    local required_vars=("TARGET_DISK" "HOST_NAME" "USER_NAME" "LUKS_NAME" "ROOT_FS_TYPE")
+    local required_vars=("DISK_TARGET" "HOST_NAME" "USER_NAME" "LUKS_NAME")
     local missing_vars=()
 
     for var in "${required_vars[@]}"; do
@@ -761,50 +646,50 @@ validate_required_variables() {
     done
 
     if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        display_critical "Missing required variables: ${missing_vars[*]}"
+        tui_print_message "Missing required variables: ${missing_vars[*]}" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_CONFIG_ERROR
     fi
 }
 
 ### = validate_required_values: - Validate required variable values
 function validate_required_values() {
-    local required_vars=("TARGET_DISK" "HOST_NAME" "USER_NAME")
+    local required_vars=("DISK_TARGET" "HOST_NAME" "USER_NAME")
 
     # Validate hostname format
     if [[ ! "$HOST_NAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
-        display_critical "Invalid hostname format: $HOST_NAME"
+        tui_print_message "Invalid hostname format: $HOST_NAME" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_CONFIG_ERROR
     fi
 
     # Validate username
     if [[ ! "$USER_NAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-        display_critical "Invalid username format: $USER_NAME"
+        tui_print_message "Invalid username format: $USER_NAME" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_CONFIG_ERROR
     fi
 
     # Validate disk path
-    if [[ ! "$TARGET_DISK" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
-        display_critical "Invalid disk path: $TARGET_DISK"
+    if [[ ! "$DISK_TARGET" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
+        tui_print_message "Invalid disk path: $DISK_TARGET" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_CONFIG_ERROR
     fi
 }
 
 ### = validate_disk_variables: - Validate disk variables exist and correct value
 validate_disk_variables() {
-    if [[ ! "$TARGET_DISK" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
-        display_critical "Invalid TARGET_DISK format: $TARGET_DISK"
+    if [[ ! "$DISK_TARGET" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
+        tui_print_message "Invalid TARGET_DISK format: $DISK_TARGET" "$RED" "$PREFIX_FAILURE"
         exit $EXIT_CONFIG_ERROR
     fi
 
     # Validate partition naming scheme
-    if [[ "$TARGET_DISK" =~ nvme ]]; then
-        EFI_PARTITION="${TARGET_DISK}p1"
-        ROOT_PARTITION="${TARGET_DISK}p2"
-        HOME_PARTITION="${TARGET_DISK}p3"
+    if [[ "$DISK_TARGET" =~ nvme ]]; then
+        PART_EFI_PATH="${DISK_TARGET}p1"
+        PART_ROOT_PATH="${DISK_TARGET}p2"
+        PART_HOME_PATH="${DISK_TARGET}p3"
     else
-        EFI_PARTITION="${TARGET_DISK}1"
-        ROOT_PARTITION="${TARGET_DISK}2"
-        HOME_PARTITION="${TARGET_DISK}3"
+        PART_EFI_PATH="${DISK_TARGET}1"
+        PART_ROOT_PATH="${DISK_TARGET}2"
+        PART_HOME_PATH="${DISK_TARGET}3"
     fi
 }
 
@@ -820,9 +705,8 @@ function init_logging() {
     local log_dir="logs/$(date +%Y%m%d_%H%M%S)"
     mkdir -p "$log_dir"
 
-    COMMAND_LOG="$log_dir/commands.log"
-    FEEDBACK_LOG="$log_dir/feedback.log"
-    ERROR_LOG="$log_dir/error.log"
+    LOG_COMMANDS="$log_dir/commands.log"
+    LOG_ERRORS="$log_dir/error.log"
 
     # Log session start
     {
@@ -830,7 +714,8 @@ function init_logging() {
         echo "Date: $(date)"
         echo "User: $(whoami)"
         echo "Host: $(uname -n)"
-    } | tee -a "$COMMAND_LOG" "$FEEDBACK_LOG" "$ERROR_LOG"
+        echo "======================================="
+    } | tee -a "$LOG_COMMANDS" "$LOG_ERRORS"
 }
 
 ### = display_help: Show usage information
@@ -880,49 +765,51 @@ function package_file_to_array() {
 
 ### = display_config: Show all config variables
 display_config() {
-    display_section "✅ Arch Install Configuration"
+    tui_print_section "Arch Install Configuration" "$YELLOW"
 
     # --- 1. DISK AND PARTITIONING ---
-    display_line "### 💾 DISK CONFIGURATION ###"
-    display_line "  Target Disk:       $TARGET_DISK"
-    display_line "  EFI Partition:     $EFI_PARTITION"
-    display_line "  ROOT Partition:    $ROOT_PARTITION"
-    display_line "  HOME Partition:    $HOME_PARTITION"
-    display_line "  Root Filesystem:   $ROOT_FS_TYPE"
-    display_line "  SWAP Size:         $SWAP_SIZE_MB MB"
-    display_line ""
+    tui_print_message "### DISK CONFIGURATION ###" "$YELLOW"
+    tui_print_message "Target Disk:       $DISK_TARGET" "$WHITE" "- "
+    tui_print_message "Part. EFI Path:    $PART_EFI_PATH" "$WHITE" "- "
+    tui_print_message "Part. EFI Size:    $PART_EFI_SIZE" "$WHITE" "- "
+    tui_print_message "Part. Root Path:   $PART_ROOT_PATH" "$WHITE" "- "
+    tui_print_message "Part. Root Size:   $PART_ROOT_SIZE" "$WHITE" "- "
+    tui_print_message "Part. Root FS:     $PART_ROOT_FS" "$WHITE" "- "
+    tui_print_message "Part. Home Path:   $PART_HOME_PATH" "$WHITE" "- "
+    tui_print_message "Part. Swap Size:   $SWAP_SIZE_MB MB" "$WHITE" "- "
+    tui_print_message ""
 
     # --- 2. SYSTEM LOCALIZATION AND TIME ---
-    display_line "### 🌎 LOCALIZATION ###"
-    display_line "  System Locale:     $SYSTEM_LOCALE"
-    display_line "  Timezone:          $TIME_ZONE"
-    display_line "  Console Keymap:    $KEYMAP"
-    display_line "  Console Font:      $FONT"
-    display_line ""
+    tui_print_message "### LOCALIZATION ###" "$YELLOW"
+    tui_print_message "System Locale:     $FB_LOCALE"  "$WHITE" "- "
+    tui_print_message "Timezone:          $FB_TIMEZONE" "$WHITE" "- "
+    tui_print_message "Console Keymap:    $FB_KEYMAP" "$WHITE" "- "
+    tui_print_message "Console Font:      $FONT" "$WHITE" "- "
+    tui_print_message ""
 
     # --- 3. NETWORK AND HOSTNAME ---
-    display_line "### 🌐 NETWORK & HOST ###"
-    display_line "  Hostname:          $HOST_NAME"
-    display_line ""
+    tui_print_message "### NETWORK & HOST ###" "$YELLOW"
+    tui_print_message "Hostname:          $HOST_NAME" "$WHITE" "- "
+    tui_print_message ""
 
     # --- 4. USER AND ROOT ACCOUNTS ---
-    display_line "### 👤 USERS & SHELL ###"
-    display_line "  Main User:         $USER_NAME"
-    display_line "  User Shell:        $USER_SHELL"
-    display_line ""
+    tui_print_message "### USERS & SHELL ###" "$YELLOW"
+    tui_print_message "Main User:         $USER_NAME" "$WHITE" "- "
+    tui_print_message "User Shell:        $USER_SHELL" "$WHITE" "- "
+    tui_print_message ""
 
     # --- 5. PACMAN AND SOFTWARE (Array Handling) ---
-    display_line "### 📦 SOFTWARE & BOOT ###"
-    display_line "  Bootloader:        $BOOTLOADER"
-    display_line ""
+    tui_print_message "### SOFTWARE & BOOT ###" "$YELLOW"
+    tui_print_message "Bootloader:        $BOOTLOADER" "$WHITE" "- "
+    tui_print_message ""
 
     # --- 6. HARDWARE DETECTED ---
-    display_line "### 🖥️  HARDWARE DETECTION ###"
-    display_line "  CPU:              $HARDWARE_CPU"
-    display_line "  GPU:              $HARDWARE_GPU"
-    display_line "  3D Support:       $HARDWARE_3D"
-    display_line "  Virtual:          $HARDWARE_VIRTUAL"
-    display_line ""
+    tui_print_message "### HARDWARE DETECTION ###" "$YELLOW"
+    tui_print_message "CPU:              $HARDWARE_CPU" "$WHITE" "- "
+    tui_print_message "GPU:              $HARDWARE_GPU" "$WHITE" "- "
+    tui_print_message "3D Support:       $HARDWARE_3D" "$WHITE" "- "
+    tui_print_message "Virtual:          $HARDWARE_VIRTUAL" "$WHITE" "- "
+    tui_print_message ""
 
     # --- 7. PACKAGES TO INSTALL ---
     PACKAGES_BASE_ARRAY_STRING=$(package_file_to_array "packages/pacman_base")
@@ -933,32 +820,34 @@ display_config() {
     eval "PACKAGES_UTILS=($PACKAGES_UTILS_ARRAY_STRING)"
     eval "PACKAGES_HARDWARE=($PACKAGES_HARDWARE_ARRAY_STRING)"
 
+    tui_print_message "### SOFTWARE PACKAGES ###" "$YELLOW"
+
     # Safely list Base Packages
     if [ ${#PACKAGES_BASE[@]} -gt 0 ]; then
-        display_line "  Base Packages:     ${PACKAGES_BASE[*]}"
+        tui_print_message "Base Packages:     ${PACKAGES_BASE[*]}" "$WHITE" "- "
     else
-        display_line "  Base Packages:     (Empty or not defined)"
+        tui_print_message "Base Packages:     (Empty or not defined)" "$WHITE" "- "
     fi
 
     # Safely list Hardware Packages
     if [[ ${#PACKAGES_HARDWARE[@]} -gt 0 ]]; then
-        display_line "  Hardware Packages: ${PACKAGES_HARDWARE[*]}"
+        tui_print_message "Hardware Packages: ${PACKAGES_HARDWARE[*]}" "$WHITE" "- "
     else
-        display_line "  Hardware Packages: (Empty or not found)"
+        tui_print_message "Hardware Packages: (Empty or not found)" "$WHITE" "- "
     fi
 
     # Safely list Common Packages
     if [ ${#PACKAGES_UTILS[@]} -gt 0 ]; then
-        display_line "  Common Packages:   ${PACKAGES_UTILS[*]}"
+        tui_print_message "Common Packages:   ${PACKAGES_UTILS[*]}" "$WHITE" "- "
     else
-        display_line "  Common Packages:   (Empty or not defined)"
+        tui_print_message "Common Packages:   (Empty or not defined)" "$WHITE" "- "
     fi
 
     echo ""
     input_info "Continue with this configuration? [y/N]: "
     read -r confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        display_info "Installation cancelled by user"
+        tui_print_message "Installation cancelled by user" "$YELLOW"
         exit 0
     fi
 }
@@ -995,11 +884,11 @@ function display_hardware_recommendations() {
     fi
 
     if [[ ${#recommendations[@]} -gt 0 ]]; then
-        display_info "=== Hardware Recommendations ==="
+        tui_print_title "Recommendations"
         for rec in "${recommendations[@]}"; do
             display_info "  • $rec"
         done
-        display_info "================================="
+        tui_print_line
     fi
 }
 
@@ -1032,9 +921,9 @@ get_password() {
 
         # --- Validation ---
         if [ -z "$pass1" ]; then
-            display_warning "Password cannot be empty. Please try again."
+            tui_print_message "Password cannot be empty. Please try again." "$YELLOW"
         elif [ "$pass1" != "$pass2" ]; then
-            display_critical "Passwords do not match. Please try again."
+            tui_print_message "Passwords do not match. Please try again." "$RED"
         else
             # Return the password by echoing it to stdout
             echo "$pass1"
@@ -1047,61 +936,67 @@ get_password() {
     return 1 # Should only be reached if loop is broken unexpectedly
 }
 
-### = run: run a command with status indicators and log outputs (with spinner)
+### = run: Run a command with status indicators and log outputs (with spinner)
 function run() {
     # 1. Function Setup and Variable Declaration
-    local command="$1"
+    local command="$1"          # The shell command to run
+    local pipe_input="${2:-}"   # The string to be piped into the command (optional)
     local pid
     local status=0
-
+    local full_command
+    local display_text
     local sanitized_command
-    sanitized_command=$(
-        # Pattern groups (must match 'echo -...' + quoted string + ' | '):
-        # 1. (echo -[a-z]*)    : Captures 'echo -n', 'echo -e', etc.
-        # 2. ([[:space:]]+)    : Captures one or more spaces.
-        # 3. (\"[^\"]+\"|'[^']+') : Captures the quoted content (the potential secret).
-        # 4. ([[:space:]]*\|)  : Captures the pipe character, optionally preceded by space.
 
-        # Replacement: \1\2[SECRET]\4 - Puts back Group 1, Group 2, the placeholder, and the pipe.
-        echo "$command" | sed -E "s/(echo -[a-z]*)([[:space:]]+)(\"[^\"]+\"|'[^']+')([[:space:]]*\|)/\1\2[SECRET]\4/g"
-                     )
+    # 2. Command Construction and Display Setup
 
-    # Use the sanitized version for display and feedback logging
-    local display_text="$sanitized_command"
+    if [ -n "$pipe_input" ]; then
+        full_command="printf '%s' \"$pipe_input\" | $command"
+
+        # --- PRIMARY PIPE SANITATION (Used directly if piping is present) ---
+        # If there is pipe input, set the display text to the clean version immediately.
+        display_text="printf [SECRET] | $command"
+    else
+        full_command="$command"
+        display_text="$command"
+
+        # 3. Security Enhancement & Display (ONLY run if no pipe is used)
+        # If no pipe is used, we check the command for secrets passed as arguments.
+        sanitized_command=$(
+            echo "$display_text" | \
+            # Target explicit password flags: -p, --password
+            sed -E "s/(-p|--password)[[:space:]]*(\"[^\"]+\"|'[^']+'|[^[:space:]]+)/\1 [SECRET]/g"
+        )
+        display_text="$sanitized_command"
+    fi
 
     # Create a unique temporary file path for output capture.
     local temp_output
     temp_output=$(mktemp)
 
-    # 2. Log Command to COMMAND_LOG (Start of command execution record)
-    echo "$sanitized_command" >> "$COMMAND_LOG"
+    # 4. Log Command to COMMAND_LOG
+    echo "$display_text" >> "$LOG_COMMANDS"
 
-    # 3. Display Running Status (uses sanitized text)
-    display_running "$display_text"
+    # 5. Display Running Status
+    tui_start_spinner "$display_text"
 
-    # 4. Execute Command in Background, when not in dry run
-    # Send all stdout/stderr (2>&1) to the temporary file for capture.
-    # The eval is necessary for robust execution of the single command string argument.
+    # 6. Execute Command in Background, when not in dry run
     if [ "$DRYRUN" -eq 0 ]; then
-        eval "$command" > "$temp_output" 2>&1 &
+        eval "$full_command" > "$temp_output" 2>&1 &
         pid=$!
 
-        # 5. Show Spinner and Wait for Completion
-        show_spinner "$pid" "$display_text"
-
-        # Wait for the background process and capture its exit status
+        # 7. Wait for Completion
         wait "$pid"
         status=$?
     fi
 
-    # 6. Process Logs (ERROR_LOG - The Master Log)
-    # ERROR_LOG contains all commands, command output, and errors.
-    echo "--- START: $display_text (PID: $pid, Status: $status) ---" >> "$ERROR_LOG"
-    cat "$temp_output" >> "$ERROR_LOG"
+    # 8. Process Logs (ERROR_LOG)
+    echo "--- START: $display_text (Status: $status) ---" >> "$LOG_ERRORS"
+    cat "$temp_output" >> "$LOG_ERRORS"
 
-    # 7. Conditional TTY Output (VERBOSE=1)
+    # 9. Conditional TTY Output (VERBOSE=1)
     if [ "$VERBOSE" -eq 1 ]; then
-        # If verbose, display the captured output to the TTY
+        tui_stop_spinner "$status" "$display_text"
+
         if [ -s "$temp_output" ]; then
             echo -e "\n[ Command Output Start ]"
             cat "$temp_output"
@@ -1109,151 +1004,96 @@ function run() {
         fi
     fi
 
-    # 8. Check Status and Exit on Failure
+    # 10. Check Status and Stop Spinner
     if [ "$status" -eq 0 ]; then
         # Success path
-        display_completed "$display_text"
+        if [ "$VERBOSE" -eq 0 ]; then
+            tui_stop_spinner 0 "$display_text"
+        fi
         rm -f "$temp_output"
     else
-        # Failure path: Log error details, display critical message, and exit.
+        # Failure path
+        echo "Command FAILED (Exit Code: $status). Error output captured below:" >> "$LOG_COMMANDS"
+        cat "$temp_output" >> "$LOG_COMMANDS"
 
-        # Append error output/status to COMMAND_LOG
-        echo "Command FAILED (Exit Code: $status). Error output captured below:" >> "$COMMAND_LOG"
-        cat "$temp_output" >> "$COMMAND_LOG"
+        tui_stop_spinner "$status" "$display_text"
 
-        # Display failure status (uses sanitized text)
-        display_failed "$display_text"
-        display_critical "Command failed for: $display_text (Exit Code $status). See $ERROR_LOG for full output and $COMMAND_LOG for errors."
+        local error_message="Command failed for: $display_text (Exit Code $status). See $LOG_ERRORS for full output and $LOG_COMMANDS for errors."
+        tui_print_message "$error_message" "$RED" "[CRITICAL]"
 
-        # Cleanup temp file and exit the script
         rm -f "$temp_output"
-        exit EXIT_COMMAND_ERROR
+        exit "$EXIT_COMMAND_ERROR"
     fi
 }
 
-### = run_chroot: run a command in the target system
-#####################################################################
-# Function: run_chroot
-# Description: Executes a shell command inside the Arch-chroot environment,
-#              supporting piped input from the host system. It handles command
-#              sanitization, logging, progress display (spinner), error checking,
-#              and exits the script on command failure.
-#
-# Assumptions:
-#   - Global variable $MOUNT_POINT is set to the mount point (e.g., /mnt).
-#   - Supporting functions (display_running, show_spinner, display_completed,
-#     display_failed, display_critical) and global variables ($COMMAND_LOG,
-#     $ERROR_LOG, $DRYRUN, $VERBOSE) are defined.
-#
-# Arguments:
-#   $1 - The shell command string to be executed *inside* the chroot (e.g., 'useradd -m user').
-#   $2 - (Optional) The string content to be piped into the chroot command's stdin
-#        (e.g., a password for 'chpasswd').
-#
-# Usage Example (Changing a password):
-#   run_chroot "chpasswd" "user:newsecretpassword"
-#
-# Usage Example (Regular command):
-#   run_chroot "pacman -Syu --noconfirm" ""
-#
-# Returns:
-#   0 - Success.
-#   Exits the script with EXIT_COMMAND_ERROR on any non-zero exit status from the
-#   executed chroot command, or EXIT_SETUP_ERROR if $CHROOT_DIR is invalid.
-#####################################################################
+### = run_chroot: Run a command in the target system
 function run_chroot() {
     # 1. Function Setup and Variable Declaration
-    local command="$1"      # The shell command to run *inside* the chroot
-    local pipe_input="$2"   # The string to be piped into the command (can be empty)
+    local command="$1"
+    local pipe_input="${2:-}"
     local pid
     local status=0
+    local sanitized_command
+    local display_text
+    local temp_output
 
     # Sanity check for chroot directory
     if [ -z "${MOUNT_POINT}" ] || [ ! -d "${MOUNT_POINT}" ]; then
-        display_critical "CHROOT_DIR is not set or not a valid directory. Cannot run arch-chroot."
-        exit EXIT_SETUP_ERROR
+        tui_print_message "CHROOT_DIR is not set or not a valid directory. Cannot run arch-chroot." "$RED" "[CRITICAL]"
+        exit "$EXIT_CONFIG_ERROR"
     fi
-
-    # # 2. Command Construction for Execution
-    # # The actual command to be executed on the *host* system, which wraps the user's command
-    # # local full_host_command="arch-chroot ${MOUNT_POINT} $command"
-    # # Wrap the command in it's own shell in case a multi 'word' function is called
-    # local full_host_command="arch-chroot ${MOUNT_POINT} sh -c \"$command\""
-
-    # # If pipe input is provided, prepend it to the full command string using 'echo' and ' | '
-    # if [ -n "$pipe_input" ]; then
-    #     # IMPORTANT: Use 'printf' to avoid issues with potential shell expansions in 'echo -n'
-    #     # The complete command to be evaluated will look like:
-    #     # printf 'pipe_input' | arch-chroot /mnt 'chpasswd ...'
-    #     full_host_command="printf '%s' \"$pipe_input\" | $full_host_command"
-    # fi
 
     # 2. Command Construction for Execution
-    # The actual command to be executed on the *host* system, which wraps the user's command
-    # The user's command ($command) is now wrapped in 'sh -c '...'' for shell feature parsing inside the chroot.
     local full_host_command="arch-chroot ${MOUNT_POINT} sh -c \"$command\""
-    # Note: Using double quotes for the external arch-chroot command and escaping internal
-    # quotes to ensure $command is passed correctly.
 
-    # If pipe input is provided, prepend it to the full command string using 'echo' and ' | '
     if [ -n "$pipe_input" ]; then
-        # IMPORTANT: Use 'printf' to avoid issues with potential shell expansions in 'echo -n'
-        # The complete command to be evaluated will look like:
-        # printf 'pipe_input' | arch-chroot /mnt sh -c 'chpasswd ...'
+        # The full command that will be evaluated
         full_host_command="printf '%s' \"$pipe_input\" | $full_host_command"
+
+        # PRIMARY PIPE SANITATION: Set the display text to the clean version immediately.
+        display_text="printf [SECRET] | arch-chroot ${MOUNT_POINT} sh -c \"$command\""
+    else
+        # If no pipe input, the host command is the display text.
+        display_text="$full_host_command"
     fi
 
-    # 3. Security Enhancement & Display Setup (Same as 'run')
-    # Sanitize the command string for display and non-error logging
-    # Note: This sanitizes the *pipe_input* if it contains the echo pattern, which is correct
-    local sanitized_command
-
-    # Adjusted regex to also catch 'printf '...'' and simplify the capture groups
-    # Note: If pipe_input is a secret, it will be the argument to 'printf', and this needs sanitation.
-    # We use a placeholder 'printf[[:space:]]+' to catch the start of the piped secret.
+    # 3. Security Enhancement & Display Setup (General cleanup for arguments inside sh -c)
+    # This catches secrets passed as arguments like -p 'pass'.
     sanitized_command=$(
-        # Start with the original pipe sanitation:
-        echo "$full_host_command" | \
-        sed -E "s/(echo -[a-z]*|[pP]rintf[[:space:]]+)(\"[^\"]+\"|'[^']+')/\1[SECRET]/g" | \
-        # Catches: -p 'pass', --password "pass", -p pass
-        sed -E "s/(-p|--password|passwd|chpasswd)[[:space:]]*(\"[^\"]+\"|'[^']+'|[^[:space:]]+)/\1 [SECRET]/g"
+        echo "$display_text" | \
+        sed -E "s/(-p|--password)[[:space:]]*(\"[^\"]+\"|'[^']+'|[^[:space:]]+)/\1 [SECRET]/g"
     )
 
-    # Use the sanitized version for display and feedback logging
-    local display_text="$sanitized_command"
+    # Final display string
+    display_text="$sanitized_command"
 
     # Create a unique temporary file path for output capture.
-    local temp_output
     temp_output=$(mktemp)
 
-    # 4. Log Command to COMMAND_LOG (Start of command execution record)
-    echo "$sanitized_command" >> "$COMMAND_LOG"
+    # 4. Log Command to COMMAND_LOG
+    echo "$sanitized_command" >> "$LOG_COMMANDS"
 
-    # 5. Display Running Status (uses sanitized text)
-    display_running "$display_text"
+    # 5. Display Running Status
+    tui_start_spinner "$display_text"
 
     # 6. Execute Command in Background, when not in dry run
     if [ "$DRYRUN" -eq 0 ]; then
-        # Use eval to robustly execute the full_host_command (which may contain a pipe)
-        # Send all stdout/stderr (2>&1) to the temporary file for capture.
         eval "$full_host_command" > "$temp_output" 2>&1 &
         pid=$!
 
-        # 7. Show Spinner and Wait for Completion
-        show_spinner "$pid" "$display_text"
-
-        # Wait for the background process and capture its exit status
+        # 7. Wait for Completion
         wait "$pid"
         status=$?
     fi
 
-    # 8. Process Logs (ERROR_LOG - The Master Log)
-    echo "--- START: $display_text (PID: $pid, Status: $status) ---" >> "$ERROR_LOG"
-    cat "$temp_output" >> "$ERROR_LOG"
-    # echo "--- END: $display_text ---" >> "$ERROR_LOG"
+    # 8. Process Logs (ERROR_LOG)
+    echo "--- START: $display_text (Status: $status) ---" >> "$LOG_ERRORS"
+    cat "$temp_output" >> "$LOG_ERRORS"
 
     # 9. Conditional TTY Output (VERBOSE=1)
     if [ "$VERBOSE" -eq 1 ]; then
+        tui_stop_spinner "$status" "$display_text"
+
         if [ -s "$temp_output" ]; then
             echo -e "\n[ Chroot Command Output Start ]"
             cat "$temp_output"
@@ -1261,25 +1101,25 @@ function run_chroot() {
         fi
     fi
 
-    # 10. Check Status and Exit on Failure
+    # 10. Check Status and Stop Spinner
     if [ "$status" -eq 0 ]; then
         # Success path
-        display_completed "$display_text"
+        if [ "$VERBOSE" -eq 0 ]; then
+            tui_stop_spinner 0 "$display_text"
+        fi
         rm -f "$temp_output"
     else
-        # Failure path: Log error details, display critical message, and exit.
+        # Failure path
+        echo "Chroot Command FAILED (Exit Code: $status). Error output captured below:" >> "$LOG_COMMANDS"
+        cat "$temp_output" >> "$LOG_COMMANDS"
 
-        # Append error output/status to COMMAND_LOG
-        echo "Chroot Command FAILED (Exit Code: $status). Error output captured below:" >> "$COMMAND_LOG"
-        cat "$temp_output" >> "$COMMAND_LOG"
+        tui_stop_spinner "$status" "$display_text"
 
-        # Display failure status (uses sanitized text)
-        display_failed "$display_text"
-        display_critical "Chroot command failed for: $display_text (Exit Code $status). See $ERROR_LOG for full output and $COMMAND_LOG for errors."
+        local error_message="Chroot command failed for: $display_text (Exit Code $status). See $LOG_ERRORS for full output and $LOG_COMMANDS for errors."
+        tui_print_message "$error_message" "$RED" "[CRITICAL]"
 
-        # Cleanup temp file and exit the script
         rm -f "$temp_output"
-        exit EXIT_COMMAND_ERROR
+        exit "$EXIT_COMMAND_ERROR"
     fi
 }
 
@@ -1305,7 +1145,7 @@ function parse_arguments() {
                 exit 0
                 ;;
             *)
-                display_critical "Unknown option: $1"
+                tui_print_message "Unknown option: $1" "$YELLOW"
                 display_help
                 ;;
         esac
@@ -1316,7 +1156,7 @@ function parse_arguments() {
 ### = get_user_info: Get the passwords for user and LUKS
 function get_user_info() {
 
-    display_section "Provide security details"
+    tui_print_section "Provide security details"
     USER_PASSWORD=$(get_password "$USER_NAME" "Enter password") || exit 1
     LUKS_PASSWORD=$(get_password "Luks" "Enter password") || exit 1
 }
@@ -1326,9 +1166,9 @@ function get_user_info() {
 function device_reset() {
 
     # Wipe partition table and inform the operating system
-    run "wipefs -af $TARGET_DISK"
-    run "sgdisk --zap-all --clear $TARGET_DISK"
-    run "partprobe ${TARGET_DISK}"
+    run "wipefs -af $DISK_TARGET"
+    run "sgdisk --zap-all --clear $DISK_TARGET"
+    run "partprobe ${DISK_TARGET}"
 
     ### Zero the target drive
     # display_info "Zero the target drive"
@@ -1356,12 +1196,12 @@ function device_partitions_create() {
     # - Note - the Discoverable Partition Specifications mentions 8304 for root
     # - Note - we are setting the GPT Partition name (not the file system label)
     #          Use sgdisk p /dev/sdx to show
-    run "sgdisk -n 1:0:+1024MiB -t 1:ef00 -c 1:EFI       ${TARGET_DISK}"
-    run "sgdisk -n 2:0:+10GiB   -t 2:8304 -c 2:CRYPTROOT ${TARGET_DISK}"
-    run "sgdisk -n 3:0:0        -t 3:8302 -c 3:HOME      ${TARGET_DISK}"
+    run "sgdisk -n 1:0:+1024MiB -t 1:ef00 -c 1:EFI       ${DISK_TARGET}"
+    run "sgdisk -n 2:0:+10GiB   -t 2:8304 -c 2:CRYPTROOT ${DISK_TARGET}"
+    run "sgdisk -n 3:0:0        -t 3:8302 -c 3:HOME      ${DISK_TARGET}"
 
     # Inform the OS of the new parititons
-    run "partprobe ${TARGET_DISK}"
+    run "partprobe ${DISK_TARGET}"
 }
 
 ### = device_encrypt_root - Encrypt root partition
@@ -1371,8 +1211,8 @@ function device_encrypt_root() {
     # When systemd runs in the initial RAM disk (initrd) and detects a root partition
     # with a recognized architecture-specific root GPT GUID that is LUKS-encrypted,
     # it will open the volume with the name root, creating the device node at /dev/mapper/root
-    run "echo -n ${LUKS_PASSWORD} | cryptsetup luksFormat /dev/disk/by-partlabel/CRYPTROOT"
-    run "echo -n ${LUKS_PASSWORD} | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
+    run "cryptsetup luksFormat /dev/disk/by-partlabel/CRYPTROOT" "${LUKS_PASSWORD}"
+    run "cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root" "${LUKS_PASSWORD}"
 }
 
 ### = device_partitions_format
@@ -1425,13 +1265,13 @@ function device_btrfs_subvolumes_mount {
     # Also note that the mount '-m' command creates the mount point if it does not already exist (${MOUNT_POINT}/home, etc )
     # Compression is enabled with zstd, which saves space and can improve performance. The zstd:1 means compression level 1 (range 1-5, default 3).
     # According to Arch Wiki, level 1 improves fragmentation and reduces IO, potentially improving performance.
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@snapshots -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/.snapshots"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@libvirt -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/libvirt"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@snapshots -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/.snapshots"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@libvirt -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/libvirt"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
 
     # Note that disabling CoW will simultaneously disable Btrfs snapshotting, data checksumming, and compression.
     # This is mainly to avoid frequent writes on directories like log, cache, tmp, and var/tmp which generally do not need snapshots.
@@ -1450,16 +1290,16 @@ function device_btrfs_subvolumes_mount {
 function device_partitions_mount() {
 
     # Open the root partiton (LUKS)
-    run "echo -n '$LUKS_PASSWORD' | cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root"
+    run "cryptsetup open /dev/disk/by-partlabel/CRYPTROOT root" "$LUKS_PASSWORD"
 
     # Mount ROOT and root sub-volumes
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@snapshots -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/.snapshots"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@libvirt -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/libvirt"
-    run "mount -t btrfs -o ${BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@ -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@cache -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/cache"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@log -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/log"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@tmp -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/tmp"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@snapshots -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/.snapshots"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@libvirt -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/libvirt"
+    run "mount -t btrfs -o ${PART_ROOT_FS_BTRFS_OPTIONS},subvol=@docker -m /dev/mapper/${LUKS_NAME} ${MOUNT_POINT}/var/lib/docker"
 
     # Mount ESP
     run "mount --mkdir LABEL=ESP ${MOUNT_POINT}/efi"
@@ -1472,7 +1312,7 @@ function device_partitions_mount() {
 ### = install_disk: Configure disks and partitions
 function install_disk() {
     ### Install Disk Configuration
-    display_section "Install Disk Configuration"
+    tui_print_title "Install Disk Configuration"
 
     device_reset
     device_partitions_create
@@ -1485,11 +1325,11 @@ function install_disk() {
 ### = install_linux_base: Pacstrap Arch Linux base (minimal)
 install_linux_base() {
     ### Install Linux OS packages
-    display_section "Install Arch Linux - base"
+    tui_print_title "Install Arch Linux - base"
 
     ### Reflector
     # Before installation, use the reflector command to update mirror lists. Replace --country with your country or a nearby one.
-    run "reflector --country ${SYSTEM_COUNTRY} --latest 10 --age 24 --protocol http,https --sort rate --save /etc/pacman.d/mirrorlist"
+    run "reflector --country ${FB_COUNTRY} --latest 10 --age 24 --protocol http,https --sort rate --save /etc/pacman.d/mirrorlist"
 
     ### Pacman Configuration
     # Arch Linux from October 2024 have 5 parallel downloads enabled by default.
@@ -1535,7 +1375,7 @@ function install_firstboot() {
     # Note when debugging the file might not exist
 
     if [[ -f "${MOUNT_POINT}/etc/locale.gen" ]]; then
-        run "sed -i -e "/^#${SYSTEM_LOCALE}/s/^#//" ${MOUNT_POINT}/etc/locale.gen"
+        run "sed -i -e "/^#${FB_LOCALE}/s/^#//" ${MOUNT_POINT}/etc/locale.gen"
     fi
 
     # Using a local FIRSTBOOT file with the parameters
@@ -1562,9 +1402,9 @@ function install_firstboot() {
 
     # Configure Locale
     run "echo -n '--root=${MOUNT_POINT} ' > FIRSTBOOT"
-    run "echo -n '--locale=${SYSTEM_LOCALE} ' >> FIRSTBOOT"
-    run "echo -n '--keymap=${KEYMAP} ' >> FIRSTBOOT"
-    run "echo -n '--timezone=${TIME_ZONE} ' >> FIRSTBOOT"
+    run "echo -n '--locale=${FB_LOCALE} ' >> FIRSTBOOT"
+    run "echo -n '--keymap=${FB_KEYMAP} ' >> FIRSTBOOT"
+    run "echo -n '--timezone=${FB_TIMEZONE} ' >> FIRSTBOOT"
     run "echo -n '--hostname=${HOST_NAME} ' >> FIRSTBOOT"
     run "echo -n '--root-password-hashed=${ROOT_PASS_HASHED} ' >> FIRSTBOOT"
 
@@ -1661,24 +1501,23 @@ function install_review() {
         "/boot"                # Check for initfram and ucode
     )
 
-    display_section "Installation Review"
-    display_info "The following key configuration files were created or modified."
-    display_info "You may review their content before rebooting."
-    display_info "==============================================================="
+    tui_print_title "Installation Review"
+    tui_print_message "Configuration files and folders were created or modified."
+    tui_print_message "You may want to review their content before rebooting."
+    tui_print_line "$YELLOW"
 
     read -r -p "Do you want to **review** the installation?  [Y/N] " initial_choice
 
     case "$initial_choice" in
         [nN])
-            display_info "Skipping all reviews"
+            tui_print_message "Skipping all reviews"
             return # Exit the function immediately
             ;;
         [yY]*|"")
             # Continue with the individual prompts
-            display_info "Proceeding with individual file/directory reviews..."
             ;;
         *)
-            display_info "Invalid choice. Skipping all reviews"
+            tui_print_message "Invalid choice. Skipping all reviews"
             return # Exit the function immediately
             ;;
     esac
@@ -1695,48 +1534,51 @@ function install_review() {
 
             case "$choice" in
                 [yY]*|"")
-                    echo -e "\n${GREEN}--- Content of ${FILE} ---${NC}"
+                    echo ""
+                    tui_print_title "Content of ${FILE}"
                     # Use 'cat' for simple output, or 'less' for long files
                     # cat "$FULL_PATH"
                     more "$FULL_PATH"
-                    display_info "--- END ---"
+                    tui_print_line "End of ${FILE}"
                     ;;
                 [nN]*)
                     continue # Skip to the next file
                     ;;
                 *)
-                    echo "Invalid choice. Skipping."
+                    tui_print_message "Invalid choice. Skipping." "$YELLOW"
                     ;;
             esac
+        else
+            tui_print_message "File ${FILE} does not exist. Skipping." "$YELLOW" "$PREFIX_WARNING"
         fi
     done
 
     for DIR in "${INSTALL_DIRS[@]}"; do
-        local FULL_PATH="${ROOT_DIR}${DIR}"
+        local FULL_PATH="${MOUNT_POINT}${DIR}"
 
         if [ -d "$FULL_PATH" ]; then
             read -r -p "List contents of ${DIR}? [Y/n] " choice
 
             case "$choice" in
                 [yY]*|"")
-                    echo -e "\n${GREEN}--- Listing contents of ${DIR} (ls -lah) ---${NC}"
+                    tui_print_title "Listing contents of ${DIR}"
                     # Use ls -lah for human-readable sizes and full details
                     ls -lah "$FULL_PATH"
-                    echo -e "--- End of ${DIR} Listing ---\n"
+                    tui_print_line "End of ${DIR} Listing"
                     ;;
                 [nN]*)
                     continue
                     ;;
                 *)
-                    echo "Invalid choice. Skipping."
+                    tui_print_message "Invalid choice. Skipping." "$YELLOW"
                     ;;
             esac
         else
-            echo -e "${YELLOW}Warning:${NC} Directory ${DIR} does not exist. Skipping."
+            tui_print_message "Directory ${DIR} does not exist. Skipping." "$YELLOW" "$PREFIX_WARNING"
         fi
     done
 
-    display_info "=== Review Complete ==="
+    tui_print_title "Review Complete"
 }
 
 ## Main
