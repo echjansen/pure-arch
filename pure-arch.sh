@@ -1,8 +1,11 @@
 #!/bin/bash
-set -e                          # Exit on error
+set -euo pipefail               # Exit on errors, etc
 
-# Terminal UI functions
-source lib/pure-linux-tui.sh
+# Absolute directory to the project
+DIR_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source common libraries
+source "${DIR_SCRIPT}/lib/pure-linux-tui.sh" # TUI Functions
 
 # Default Configuration File
 CONFIG_FILE="config.conf"
@@ -17,7 +20,7 @@ VERBOSE=0                       # 1=Show shell execution output
 DRYRUN=0                        # 1=Do net execute to shell commands
 
 # Global constants
-readonly MOUNT_POINT="/tmp"     # Mount point for Arch Linux installation
+readonly MOUNT_POINT="/mnt"     # Mount point for Arch Linux installation
 readonly LUKS_NAME="root"       # 'root' is required by the Discoverable Partitions Specifications
 
 # Hardware Detection Global Variables
@@ -63,26 +66,82 @@ readonly EXIT_NETWORK_ERROR=12
 readonly EXIT_DISK_ERROR=13
 readonly EXIT_DEPENDENCY_ERROR=14
 
+# Features
+FEATURE_MKINITCPIO="true"       # Create UKI images with mkinitcpio
+FEATURE_DRACUT="false"          # Create UKI images with dracut
+
+# Load features, depending on configuration
+FEATURE_INITCPIO=true
+
+
+[[ "${FEATURE_MKINITCPIO}" == "true" ]] && source "${DIR_SCRIPT}/features/pure-arch-mkinitcpio.sh"
+[[ "${FEATURE_DRACUT}" == "true" ]] && source "${DIR_SCRIPT}/features/pure-arch-dracut.sh"
+
+
 ## Error trapping and clean-up
 # Set up trap EARLY - before any risky operations
-trap cleanup_error ERR EXIT
+trap user_error ERR EXIT
 
-### = cleanup_error: Close encrypted partitions, umount, etc
-function cleanup_error() {
+### = user_error: User error found. Provide some help.
+function user_error() {
     local exit_code=$?
+    local error_message=""
+    local next_step=""
 
-    # Only run cleanup if there was an actual error (from 'run' calling exit)
+    # Only run if there was an actual error (non-zero exit code)
     if [[ $exit_code -ne 0 ]]; then
-        tui_print_message "Installation failed with exit code $exit_code. Cleaning up..."
+        tui_print_message "Installation failed with exit code $exit_code."
 
-        # Print last lines from error log
+        # 1. Map the exit code to a meaningful message and action
+        case $exit_code in
+            "$EXIT_CONFIG_ERROR")
+                error_message="Configuration Error (Code $EXIT_CONFIG_ERROR): The installer or a component was misconfigured."
+                next_step="Check your configuration files and input parameters."
+                ;;
+            "$EXIT_COMMAND_ERROR")
+                error_message="Command Execution Error (Code $EXIT_COMMAND_ERROR): A shell command failed to execute correctly."
+                next_step="Review the log file for the specific command that failed."
+                ;;
+            "$EXIT_PERMISSION_ERROR")
+                error_message="Permission Error (Code $EXIT_PERMISSION_ERROR): The script lacked necessary permissions (e.g., failed to use 'sudo')."
+                next_step="Ensure the script is run as root or with correct permissions."
+                ;;
+            "$EXIT_SYSTEM_ERROR")
+                error_message="System/Kernel Error (Code $EXIT_SYSTEM_ERROR): A low-level system call failed unexpectedly."
+                next_step="Check your system's kernel logs (e.g., 'dmesg')."
+                ;;
+            "$EXIT_NETWORK_ERROR")
+                error_message="Network Error (Code $EXIT_NETWORK_ERROR): A download or network connection failed."
+                next_step="Verify your network connection and proxy settings."
+                ;;
+            "$EXIT_DISK_ERROR")
+                error_message="Disk/I/O Error (Code $EXIT_DISK_ERROR): An operation on a disk (partitioning, mounting, writing) failed."
+                next_step="Verify the target disk status and check for existing mounts/locks."
+                ;;
+            "$EXIT_DEPENDENCY_ERROR")
+                error_message="Dependency Error (Code $EXIT_DEPENDENCY_ERROR): A required package or tool was missing."
+                next_step="Install the missing dependency packages."
+                ;;
+            *)
+                error_message="Unknown Error (Code $exit_code): An unhandled error occurred."
+                next_step="Check the error log for detailed tracing."
+                ;;
+        esac
+
+        # 2. Display the consolidated error message and next step
+        echo ""
+        tui_print_title "[ FATAL ERROR ]" "$RED"
+        tui_print_message "$error_message" "$RED" ">>"
+        tui_print_message "Recommended Action: $next_step" "$YELLOW" ">>"
+
+        # 3. Print log preview (Your existing logic)
         if [[ -n "$LOG_ERRORS" ]]; then
             echo ""
             tui_print_title "[ ERROR LOG PREVIEW ]" "$RED"
             tail -n 10 "$LOG_ERRORS"
             tui_print_title "[ END LOG PREVIEW ]" "$RED"
             echo ""
-            tui_print_message "Check $LOG_ERRORS for full details." "$YELLOW$BOLD" "-->"
+            tui_print_message "Check $LOG_ERRORS for full details." "$YELLOW" "-->"
         fi
     fi
 }
@@ -100,11 +159,17 @@ function cleanup() {
 }
 
 ## TUI Functions
+### = print_banner: Print banner on a new page
+function print_banner() {
+    clear
+    tui_print_banner "=== P U R E - A R C H ===" ""
+}
+
 ### = input_info: display messages prompting for input in bold yellow
 function input_info() {
     # The message is printed using '-n -e' to allow escape codes
     # and to keep the cursor on the same line (no automatic newline).
-    echo -n -e "$BOLD$YELLOW[INPUT]${RESET} $1" >&2
+    echo -n -e "${BOLD}${YELLOW}[INPUT]${RESET} $1" >&2
 }
 
 ## Check functions
@@ -390,9 +455,13 @@ function preflight_checks() {
     # Validate target disk exists and is accessible
     check_target_disk
 
-    tui_print_message "All pre-flight checks passed successfully" "$GREEN" "$PREFIX_SUCCESS"
-
     echo ""
+    input_info "Continue with this detected values? [y/N]: "
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        tui_print_message "Installation cancelled by user" "$YELLOW"
+        exit 0
+    fi
 }
 
 ## Hardware functions
@@ -618,108 +687,9 @@ function is_multiple_gpus() {
     [[ "$HARDWARE_GPU" =~ \+ ]]
 }
 
-## Support functions
-### = load_config: Load variables from a configuration file
-function load_config() {
-    local config_file="$1"
-    if [[ -f "$config_file" ]]; then
-        # Validate config file before sourcing
-        if bash -n "$config_file"; then
-            tui_print_message "Loading configuration from: ${config_file}" "$GREEN" "$PREFIX_SUCCESS"
-            source "$config_file"
-        else
-            tui_print_message "Invalid configuration file syntax: $config_file" "$RED" "$PREFIX_FAILURE"
-            exit EXIT_CONFIG_ERROR
-        fi
-    fi
-}
-
-### = validate_required_variables: - Validate required variables exist and correct value
-validate_required_variables() {
-    local required_vars=("DISK_TARGET" "HOST_NAME" "USER_NAME" "LUKS_NAME")
-    local missing_vars=()
-
-    for var in "${required_vars[@]}"; do
-        if [[ -z "${!var:-}" ]]; then
-            missing_vars+=("$var")
-        fi
-    done
-
-    if [[ ${#missing_vars[@]} -gt 0 ]]; then
-        tui_print_message "Missing required variables: ${missing_vars[*]}" "$RED" "$PREFIX_FAILURE"
-        exit $EXIT_CONFIG_ERROR
-    fi
-}
-
-### = validate_required_values: - Validate required variable values
-function validate_required_values() {
-    local required_vars=("DISK_TARGET" "HOST_NAME" "USER_NAME")
-
-    # Validate hostname format
-    if [[ ! "$HOST_NAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
-        tui_print_message "Invalid hostname format: $HOST_NAME" "$RED" "$PREFIX_FAILURE"
-        exit $EXIT_CONFIG_ERROR
-    fi
-
-    # Validate username
-    if [[ ! "$USER_NAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
-        tui_print_message "Invalid username format: $USER_NAME" "$RED" "$PREFIX_FAILURE"
-        exit $EXIT_CONFIG_ERROR
-    fi
-
-    # Validate disk path
-    if [[ ! "$DISK_TARGET" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
-        tui_print_message "Invalid disk path: $DISK_TARGET" "$RED" "$PREFIX_FAILURE"
-        exit $EXIT_CONFIG_ERROR
-    fi
-}
-
-### = validate_disk_variables: - Validate disk variables exist and correct value
-validate_disk_variables() {
-    if [[ ! "$DISK_TARGET" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
-        tui_print_message "Invalid TARGET_DISK format: $DISK_TARGET" "$RED" "$PREFIX_FAILURE"
-        exit $EXIT_CONFIG_ERROR
-    fi
-
-    # Validate partition naming scheme
-    if [[ "$DISK_TARGET" =~ nvme ]]; then
-        PART_EFI_PATH="${DISK_TARGET}p1"
-        PART_ROOT_PATH="${DISK_TARGET}p2"
-        PART_HOME_PATH="${DISK_TARGET}p3"
-    else
-        PART_EFI_PATH="${DISK_TARGET}1"
-        PART_ROOT_PATH="${DISK_TARGET}2"
-        PART_HOME_PATH="${DISK_TARGET}3"
-    fi
-}
-
-### = validate_config: - Validate all variables
-validate_config() {
-    validate_required_variables
-    validate_required_values
-    validate_disk_variables
-}
-
-### = init_logging: Setup log files
-function init_logging() {
-    local log_dir="logs/$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$log_dir"
-
-    LOG_COMMANDS="$log_dir/commands.log"
-    LOG_ERRORS="$log_dir/error.log"
-
-    # Log session start
-    {
-        echo "=== Arch Linux Installation Started ==="
-        echo "Date: $(date)"
-        echo "User: $(whoami)"
-        echo "Host: $(uname -n)"
-        echo "======================================="
-    } | tee -a "$LOG_COMMANDS" "$LOG_ERRORS"
-}
-
-### = display_help: Show usage information
-function display_help() {
+## [0] Setup script logic
+### = setup_help: Show usage information
+function setup_help() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
@@ -732,7 +702,7 @@ function display_help() {
     exit EXIT_SUCCESS
 }
 
-### = package_file_to_array: Create array from package file
+#### = package_file_to_array: Create array from package file
 function package_file_to_array() {
 
     local file_path="$1"
@@ -763,96 +733,7 @@ function package_file_to_array() {
     return 0
 }
 
-### = display_config: Show all config variables
-display_config() {
-    tui_print_section "Arch Install Configuration" "$YELLOW"
-
-    # --- 1. DISK AND PARTITIONING ---
-    tui_print_message "### DISK CONFIGURATION ###" "$YELLOW"
-    tui_print_message "Target Disk:       $DISK_TARGET" "$WHITE" "- "
-    tui_print_message "Part. EFI Path:    $PART_EFI_PATH" "$WHITE" "- "
-    tui_print_message "Part. EFI Size:    $PART_EFI_SIZE" "$WHITE" "- "
-    tui_print_message "Part. Root Path:   $PART_ROOT_PATH" "$WHITE" "- "
-    tui_print_message "Part. Root Size:   $PART_ROOT_SIZE" "$WHITE" "- "
-    tui_print_message "Part. Root FS:     $PART_ROOT_FS" "$WHITE" "- "
-    tui_print_message "Part. Home Path:   $PART_HOME_PATH" "$WHITE" "- "
-    tui_print_message "Part. Swap Size:   $SWAP_SIZE_MB MB" "$WHITE" "- "
-    tui_print_message ""
-
-    # --- 2. SYSTEM LOCALIZATION AND TIME ---
-    tui_print_message "### LOCALIZATION ###" "$YELLOW"
-    tui_print_message "System Locale:     $FB_LOCALE"  "$WHITE" "- "
-    tui_print_message "Timezone:          $FB_TIMEZONE" "$WHITE" "- "
-    tui_print_message "Console Keymap:    $FB_KEYMAP" "$WHITE" "- "
-    tui_print_message "Console Font:      $FONT" "$WHITE" "- "
-    tui_print_message ""
-
-    # --- 3. NETWORK AND HOSTNAME ---
-    tui_print_message "### NETWORK & HOST ###" "$YELLOW"
-    tui_print_message "Hostname:          $HOST_NAME" "$WHITE" "- "
-    tui_print_message ""
-
-    # --- 4. USER AND ROOT ACCOUNTS ---
-    tui_print_message "### USERS & SHELL ###" "$YELLOW"
-    tui_print_message "Main User:         $USER_NAME" "$WHITE" "- "
-    tui_print_message "User Shell:        $USER_SHELL" "$WHITE" "- "
-    tui_print_message ""
-
-    # --- 5. PACMAN AND SOFTWARE (Array Handling) ---
-    tui_print_message "### SOFTWARE & BOOT ###" "$YELLOW"
-    tui_print_message "Bootloader:        $BOOTLOADER" "$WHITE" "- "
-    tui_print_message ""
-
-    # --- 6. HARDWARE DETECTED ---
-    tui_print_message "### HARDWARE DETECTION ###" "$YELLOW"
-    tui_print_message "CPU:              $HARDWARE_CPU" "$WHITE" "- "
-    tui_print_message "GPU:              $HARDWARE_GPU" "$WHITE" "- "
-    tui_print_message "3D Support:       $HARDWARE_3D" "$WHITE" "- "
-    tui_print_message "Virtual:          $HARDWARE_VIRTUAL" "$WHITE" "- "
-    tui_print_message ""
-
-    # --- 7. PACKAGES TO INSTALL ---
-    PACKAGES_BASE_ARRAY_STRING=$(package_file_to_array "packages/pacman_base")
-    PACKAGES_UTILS_ARRAY_STRING=$(package_file_to_array "packages/pacman_utils")
-    PACKAGES_HARDWARE_ARRAY_STRING=$(package_file_to_array "PACKAGES_HARDWARE")
-
-    eval "PACKAGES_BASE=($PACKAGES_BASE_ARRAY_STRING)"
-    eval "PACKAGES_UTILS=($PACKAGES_UTILS_ARRAY_STRING)"
-    eval "PACKAGES_HARDWARE=($PACKAGES_HARDWARE_ARRAY_STRING)"
-
-    tui_print_message "### SOFTWARE PACKAGES ###" "$YELLOW"
-
-    # Safely list Base Packages
-    if [ ${#PACKAGES_BASE[@]} -gt 0 ]; then
-        tui_print_message "Base Packages:     ${PACKAGES_BASE[*]}" "$WHITE" "- "
-    else
-        tui_print_message "Base Packages:     (Empty or not defined)" "$WHITE" "- "
-    fi
-
-    # Safely list Hardware Packages
-    if [[ ${#PACKAGES_HARDWARE[@]} -gt 0 ]]; then
-        tui_print_message "Hardware Packages: ${PACKAGES_HARDWARE[*]}" "$WHITE" "- "
-    else
-        tui_print_message "Hardware Packages: (Empty or not found)" "$WHITE" "- "
-    fi
-
-    # Safely list Common Packages
-    if [ ${#PACKAGES_UTILS[@]} -gt 0 ]; then
-        tui_print_message "Common Packages:   ${PACKAGES_UTILS[*]}" "$WHITE" "- "
-    else
-        tui_print_message "Common Packages:   (Empty or not defined)" "$WHITE" "- "
-    fi
-
-    echo ""
-    input_info "Continue with this configuration? [y/N]: "
-    read -r confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        tui_print_message "Installation cancelled by user" "$YELLOW"
-        exit 0
-    fi
-}
-
-### = display_hardware_recommendation: Hardware help
+#### = display_hardware_recommendation: Hardware help
 function display_hardware_recommendations() {
     local recommendations=()
 
@@ -892,7 +773,7 @@ function display_hardware_recommendations() {
     fi
 }
 
-### = get_password: Enter password and check
+#### = get_password: Enter password and check
 # ==============================================================
 # 🔐 Function to securely read and confirm a password
 # Arguments:
@@ -936,7 +817,7 @@ get_password() {
     return 1 # Should only be reached if loop is broken unexpectedly
 }
 
-### = run: Run a command with status indicators and log outputs (with spinner)
+#### = run: Run a command with status indicators and log outputs (with spinner)
 function run() {
     # 1. Function Setup and Variable Declaration
     local command="$1"          # The shell command to run
@@ -1026,7 +907,7 @@ function run() {
     fi
 }
 
-### = run_chroot: Run a command in the target system
+#### = run_chroot: Run a command in the target system
 function run_chroot() {
     # 1. Function Setup and Variable Declaration
     local command="$1"
@@ -1123,9 +1004,8 @@ function run_chroot() {
     fi
 }
 
-## Setup script logic
-### = parse_arguments: Set variables depending on arguments passed
-function parse_arguments() {
+### = setup_arguments: Set variables depending on arguments passed
+function setup_arguments() {
     while [[ $# -gt 0 ]]; do
         case $1 in
             -c|--config)        # Load variables from external config file
@@ -1141,17 +1021,35 @@ function parse_arguments() {
                 shift
                 ;;
             -h|--help)          # Show help options
-                display_help
+                setup_help
                 exit 0
                 ;;
             *)
                 tui_print_message "Unknown option: $1" "$YELLOW"
-                display_help
+                setup_help
                 ;;
         esac
     done
 }
 
+
+### = setup_logging: Setup log files
+function setup_logging() {
+    local log_dir="logs/$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$log_dir"
+
+    LOG_COMMANDS="$log_dir/commands.log"
+    LOG_ERRORS="$log_dir/error.log"
+
+    # Log session start
+    {
+        echo "=== Arch Linux Installation Started ==="
+        echo "Date: $(date)"
+        echo "User: $(whoami)"
+        echo "Host: $(uname -n)"
+        echo "======================================="
+    } | tee -a "$LOG_COMMANDS" "$LOG_ERRORS" > /dev/null
+}
 
 ### = get_user_info: Get the passwords for user and LUKS
 function get_user_info() {
@@ -1161,13 +1059,187 @@ function get_user_info() {
     LUKS_PASSWORD=$(get_password "Luks" "Enter password") || exit 1
 }
 
-## Device and Partition functions
+## [1] Configuration functions
+### = config_load: Load variables from a configuration file
+function config_load() {
+    local config_file="$1"
+    if [[ -f "$config_file" ]]; then
+        # Validate config file before sourcing
+        if bash -n "$config_file"; then
+            tui_print_message "Loading configuration from: ${config_file}" "$GREEN" "$PREFIX_SUCCESS"
+            source "$config_file"
+        else
+            tui_print_message "Invalid configuration file syntax: $config_file" "$RED" "$PREFIX_FAILURE"
+            exit EXIT_CONFIG_ERROR
+        fi
+    fi
+}
+
+### = config_required_variables: - Validate required variables exist and correct value
+function config_required_variables() {
+    local required_vars=("DISK_TARGET" "HOST_NAME" "USER_NAME" "LUKS_NAME")
+    local missing_vars=()
+
+    for var in "${required_vars[@]}"; do
+        if [[ -z "${!var:-}" ]]; then
+            missing_vars+=("$var")
+        fi
+    done
+
+    if [[ ${#missing_vars[@]} -gt 0 ]]; then
+        tui_print_message "Missing required variables: ${missing_vars[*]}" "$RED" "$PREFIX_FAILURE"
+        exit $EXIT_CONFIG_ERROR
+    fi
+}
+
+### = config_required_values: - Validate required variable values
+function config_required_values() {
+    local required_vars=("DISK_TARGET" "HOST_NAME" "USER_NAME")
+
+    # Validate hostname format
+    if [[ ! "$HOST_NAME" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$ ]]; then
+        tui_print_message "Invalid hostname format: $HOST_NAME" "$RED" "$PREFIX_FAILURE"
+        exit $EXIT_CONFIG_ERROR
+    fi
+
+    # Validate username
+    if [[ ! "$USER_NAME" =~ ^[a-z_][a-z0-9_-]*$ ]]; then
+        tui_print_message "Invalid username format: $USER_NAME" "$RED" "$PREFIX_FAILURE"
+        exit $EXIT_CONFIG_ERROR
+    fi
+
+    # Validate disk path
+    if [[ ! "$DISK_TARGET" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
+        tui_print_message "Invalid disk path: $DISK_TARGET" "$RED" "$PREFIX_FAILURE"
+        exit $EXIT_CONFIG_ERROR
+    fi
+}
+
+### = config_disk_variables: - Validate disk variables exist and correct value
+function config_disk_variables() {
+    if [[ ! "$DISK_TARGET" =~ ^/dev/[a-zA-Z0-9]+$ ]]; then
+        tui_print_message "Invalid TARGET_DISK format: $DISK_TARGET" "$RED" "$PREFIX_FAILURE"
+        exit $EXIT_CONFIG_ERROR
+    fi
+
+    # Validate partition naming scheme
+    if [[ "$DISK_TARGET" =~ nvme ]]; then
+        PART_EFI_PATH="${DISK_TARGET}p1"
+        PART_ROOT_PATH="${DISK_TARGET}p2"
+        PART_HOME_PATH="${DISK_TARGET}p3"
+    else
+        PART_EFI_PATH="${DISK_TARGET}1"
+        PART_ROOT_PATH="${DISK_TARGET}2"
+        PART_HOME_PATH="${DISK_TARGET}3"
+    fi
+}
+
+### = config_validate: - Validate all variables
+function config_validate() {
+    config_required_variables
+    config_required_values
+    config_disk_variables
+}
+
+### = config_display: Show all config variables
+function config_display() {
+    tui_print_section "Arch Install Configuration"
+
+    # --- 1. DISK AND PARTITIONING ---
+    tui_print_message "### DISK CONFIGURATION ###" "$YELLOW"
+    tui_print_message "Target Disk:       $DISK_TARGET" "$WHITE" "- "
+    tui_print_message "Part. EFI Path:    $PART_EFI_PATH" "$WHITE" "- "
+    tui_print_message "Part. EFI Size:    $PART_EFI_SIZE" "$WHITE" "- "
+    tui_print_message "Part. Root Path:   $PART_ROOT_PATH" "$WHITE" "- "
+    tui_print_message "Part. Root Size:   $PART_ROOT_SIZE" "$WHITE" "- "
+    tui_print_message "Part. Root FS:     $PART_ROOT_FS" "$WHITE" "- "
+    tui_print_message "Part. Home Path:   $PART_HOME_PATH" "$WHITE" "- "
+    tui_print_message "Part. Swap Size:   $SWAP_SIZE_MB MB" "$WHITE" "- "
+    tui_print_message ""
+
+    # --- 2. SYSTEM LOCALIZATION AND TIME ---
+    tui_print_message "### LOCALIZATION ###" "$YELLOW"
+    tui_print_message "System Locale:     $FB_LOCALE"  "$WHITE" "- "
+    tui_print_message "Timezone:          $FB_TIMEZONE" "$WHITE" "- "
+    tui_print_message "Console Keymap:    $FB_KEYMAP" "$WHITE" "- "
+    tui_print_message "Console Font:      $FONT" "$WHITE" "- "
+    tui_print_message ""
+
+    # --- 3. NETWORK AND HOSTNAME ---
+    tui_print_message "### NETWORK & HOST ###" "$YELLOW"
+    tui_print_message "Hostname:          $HOST_NAME" "$WHITE" "- "
+    tui_print_message ""
+
+    # --- 4. USER AND ROOT ACCOUNTS ---
+    tui_print_message "### USERS & SHELL ###" "$YELLOW"
+    tui_print_message "Main User:         $USER_NAME" "$WHITE" "- "
+    tui_print_message "User Shell:        $USER_SHELL" "$WHITE" "- "
+    tui_print_message ""
+
+    # --- 5. PACMAN AND SOFTWARE (Array Handling) ---
+    tui_print_message "### SOFTWARE & BOOT ###" "$YELLOW"
+    tui_print_message "Bootloader:        $BOOTLOADER" "$WHITE" "- "
+    tui_print_message ""
+
+    # --- 6. HARDWARE DETECTED ---
+    tui_print_message "### HARDWARE DETECTION ###" "$YELLOW"
+    tui_print_message "CPU:              $HARDWARE_CPU" "$WHITE" "- "
+    tui_print_message "GPU:              $HARDWARE_GPU" "$WHITE" "- "
+    tui_print_message "3D Support:       $HARDWARE_3D" "$WHITE" "- "
+    tui_print_message "Virtual:          $HARDWARE_VIRTUAL" "$WHITE" "- "
+    tui_print_message ""
+
+    # --- 7. PACKAGES TO INSTALL ---
+    PACKAGES_BASE_ARRAY_STRING=$(package_file_to_array "packages/pacman_base")
+    PACKAGES_UTILS_ARRAY_STRING=$(package_file_to_array "packages/pacman_utils")
+    PACKAGES_HARDWARE_ARRAY_STRING=$(package_file_to_array "PACKAGES_HARDWARE")
+
+    eval "PACKAGES_BASE=($PACKAGES_BASE_ARRAY_STRING)"
+    eval "PACKAGES_UTILS=($PACKAGES_UTILS_ARRAY_STRING)"
+    eval "PACKAGES_HARDWARE=($PACKAGES_HARDWARE_ARRAY_STRING)"
+
+    tui_print_message "### SOFTWARE PACKAGES ###" "$YELLOW"
+
+    # Safely list Base Packages
+    if [ ${#PACKAGES_BASE[@]} -gt 0 ]; then
+        tui_print_message "Base Packages:     ${PACKAGES_BASE[*]}" "$WHITE" "- "
+    else
+        tui_print_message "Base Packages:     (Empty or not defined)" "$WHITE" "- "
+    fi
+
+    # Safely list Hardware Packages
+    if [[ ${#PACKAGES_HARDWARE[@]} -gt 0 ]]; then
+        tui_print_message "Hardware Packages: ${PACKAGES_HARDWARE[*]}" "$WHITE" "- "
+    else
+        tui_print_message "Hardware Packages: (Empty or not found)" "$WHITE" "- "
+    fi
+
+    # Safely list Common Packages
+    if [ ${#PACKAGES_UTILS[@]} -gt 0 ]; then
+        tui_print_message "Common Packages:   ${PACKAGES_UTILS[*]}" "$WHITE" "- "
+    else
+        tui_print_message "Common Packages:   (Empty or not defined)" "$WHITE" "- "
+    fi
+
+    echo ""
+    input_info "Continue with this configuration? [y/N]: "
+    read -r confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        tui_print_message "Installation cancelled by user" "$YELLOW"
+        exit 0
+    fi
+}
+
+## [2] Device and Partition functions
 ### = device_reset: - Clear device, partitions, randomise, etc
 function device_reset() {
 
+    # Umount
+    run "umount -R ${DISK_TARGET}"
+
     # Wipe partition table and inform the operating system
     run "wipefs -af $DISK_TARGET"
-    run "sgdisk --zap-all --clear $DISK_TARGET"
+    run "sgdisk --zap-all --clear ${DISK_TARGET}"
     run "partprobe ${DISK_TARGET}"
 
     ### Zero the target drive
@@ -1308,7 +1380,7 @@ function device_partitions_mount() {
     run "mount --mkdir LABEL=Home ${MOUNT_POINT}/home -o compress-force=zstd,noatime"
 }
 
-## Linux Installation functions
+## [3] Linux Installation functions
 ### = install_disk: Configure disks and partitions
 function install_disk() {
     ### Install Disk Configuration
@@ -1584,29 +1656,41 @@ function install_review() {
 ## Main
 main() {
 
-    # Setup system and configuration
-    clear
-    init_logging
-    detect_hardware
-    parse_arguments "$@"
-    load_config "$CONFIG_FILE"
-    validate_config
-    display_config
+    # 0. Setup
+    setup_logging
+    setup_arguments "$@"
 
-    # Check host and tarfet system
-    clear
+    # 1. Detect target hardware
+    print_banner
+    config_load "$CONFIG_FILE"
+    config_validate
+    detect_hardware
     preflight_checks
 
+    # 2. Show target configuration
+    print_banner
+    config_display
+
+    # Check host and tarfet system
+
     # Main installation logic would go here
+    print_banner
     get_user_info
 
-    clear
+    # 2. Install disk
+    print_banner
     install_disk
+
+    # 3. Install Arch Linux
+    print_banner
     install_linux_base
     install_firstboot
     install_user
     install_uki
     install_services
+
+    # 4. Review install
+    print_banner
     install_review
 
     # cleanup_all
@@ -1616,3 +1700,17 @@ main() {
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
 fi
+
+
+# CHOICE_1=$(tui_input_choice "Proceed with installation? [yes/no] " "yes,no,y,n")
+# # Check the result of the function
+# if [[ $? -eq 0 ]]; then
+#     if [[ "$CHOICE_1" =~ ^(y|yes)$ ]]; then
+#         echo "Proceeding with installation..."
+#     else
+#         echo "Installation cancelled."
+#     fi
+# else
+#     echo "Script cancelled by user."
+#     exit 1
+# fi
